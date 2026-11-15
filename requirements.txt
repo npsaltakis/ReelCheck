@@ -1,0 +1,5 @@
+av
+numpy
+pygame-ce
+sounddevice
+pillow

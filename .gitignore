@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Τοπικά / δοκιμές
+*.log
+_test*
+Αναφορά_DCP*.html
+Έλεγχος_DCP*.csv
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# δεδομένα για screenshots
+_demo/
