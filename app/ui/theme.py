@@ -57,7 +57,17 @@ class Theme:
         st.map("TCheckbutton", background=[("active", p["bg"])],
                indicatorbackground=[("selected", p["sel"]), ("active", p["alt"])])
         st.configure("TEntry", fieldbackground=p["field"], foreground=p["fg"], insertcolor=p["fg"])
-        st.configure("TCombobox", fieldbackground=p["field"], foreground=p["fg"], background=p["alt"])
+        st.configure("TCombobox", fieldbackground=p["field"], foreground=p["fg"], background=p["alt"],
+                     arrowcolor=p["fg"])
+        st.map("TCombobox", fieldbackground=[("readonly", p["field"])], foreground=[("readonly", p["fg"])],
+               selectbackground=[("readonly", p["field"])], selectforeground=[("readonly", p["fg"])])
+        self.root.option_add("*TCombobox*Listbox.background", p["field"])
+        self.root.option_add("*TCombobox*Listbox.foreground", p["fg"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", p["sel"])
+        st.configure("TRadiobutton", background=p["bg"], foreground=p["fg"], indicatorbackground=p["field"])
+        st.map("TRadiobutton", background=[("active", p["bg"])], indicatorbackground=[("selected", p["sel"])])
+        st.configure("TLabelframe", background=p["bg"], bordercolor=p["border"])
+        st.configure("TLabelframe.Label", background=p["bg"], foreground=p["fg"])
         st.configure("Treeview", background=p["field"], fieldbackground=p["field"], foreground=p["fg"],
                      rowheight=24, bordercolor=p["border"])
         st.map("Treeview", background=[("selected", p["sel"])], foreground=[("selected", p["selfg"])])

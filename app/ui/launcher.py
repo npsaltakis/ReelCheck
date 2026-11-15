@@ -22,9 +22,12 @@ from app.core.report import item_row, status_of, write_csv, write_report
 from app.core.subtitles import track_summary
 from app.core.util import fmt_time
 from app.tools.catalog import catalog_table, read_catalog
+from app.tools.convert import convert
 from app.tools.copier import copy_verify, dcp_folders_for, write_copy_report
+from app.tools.dcpomatic import DOWNLOAD_PAGE, find_dcpomatic, find_downloaded_installer, install
 from app.tools.playlist import playlist_order
 from app.tools.update import can_self_update, check_update, download_update, install_update
+from app.ui.convert_window import ConvertWindow
 from app.ui.dialogs import CatalogWindow, SpecDialog
 from app.ui.jobs import JobRunner
 from app.ui.spawn import player_command, start_player
@@ -125,6 +128,7 @@ class LauncherWindow:
         top.pack(fill="x")
         ttk.Button(top, text="Άνοιγμα φακέλου DCP…", command=self.choose_folder).pack(side="left")
         ttk.Button(top, text="Άνοιγμα βίντεο…", command=self.open_video).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Βίντεο → DCP…", command=self.open_convert).pack(side="left", padx=(6, 0))
         self.entry = ttk.Entry(top, textvariable=self.path_var)
         self.entry.pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(top, text="Φόρτωση", command=self.load_typed).pack(side="left")
@@ -175,6 +179,8 @@ class LauncherWindow:
     def _build_menu(self):
         menubar = tk.Menu(self.root)
         tools = tk.Menu(menubar, tearoff=0)
+        tools.add_command(label="Μετατροπή βίντεο (MP4 κ.λπ.) σε DCP…", command=self.open_convert)
+        tools.add_separator()
         tools.add_command(label="Προδιαγραφές φεστιβάλ…", command=self.edit_spec)
         tools.add_command(label="Σάρωση επιλεγμένων (μαύρο, σιωπή, ήχος, υπότιτλοι)",
                           command=lambda: self.run_scan(self.selected()))
@@ -542,6 +548,114 @@ class LauncherWindow:
         self.spawn_player(c.path, extra_args=["--autoexit"], on_exit=next_or_stop)
 
     # ================================================================== εργαλεία
+    def when_idle(self, fn, interval=500):
+        """Εκτελεί το fn μόλις δεν τρέχει άλλη εργασία."""
+        if self.jobs.busy:
+            self.root.after(interval, lambda: self.when_idle(fn, interval))
+        else:
+            fn()
+
+    # ------------------------------------------------------------------ βίντεο → DCP
+    def open_convert(self):
+        self.convert_win = ConvertWindow(self.root, self.theme, find_dcpomatic(), self.run_convert,
+                                         self.install_dcpomatic)
+
+    def _convert_parent(self):
+        win = getattr(self, "convert_win", None)
+        return win.win if win and win.win.winfo_exists() else self.root
+
+    def install_dcpomatic(self):
+        """
+        Ανοίγει τη σελίδα λήψης του DCP-o-matic και περιμένει στο παρασκήνιο: μόλις ο installer κατέβει στις
+        Λήψεις, προτείνει να τον εγκαταστήσει μόνο του (ή εντοπίζει το πρόγραμμα αν το εγκαταστήσεις εσύ).
+        """
+        if getattr(self, "_waiting_install", False):
+            webbrowser.open(DOWNLOAD_PAGE)
+            return
+        if not messagebox.askyesno(
+                APP_NAME, "Θα ανοίξει η σελίδα του DCP-o-matic (δωρεάν πρόγραμμα, dcpomatic.com).\n\n"
+                          "1. Πάτα «Windows 64-bit» (μπορείς να συνεχίσεις χωρίς δωρεά).\n"
+                          "2. Άφησέ το να κατέβει στις Λήψεις.\n"
+                          "3. Το ReelCheck θα το βρει και θα κάνει μόνο του την εγκατάσταση "
+                          "(τα Windows θα ζητήσουν άδεια).\n\nΆνοιγμα της σελίδας;", parent=self._convert_parent()):
+            return
+        webbrowser.open(DOWNLOAD_PAGE)
+        self._waiting_install = True
+        self.status_var.set("Περιμένω το DCP-o-matic: κατέβασε «Windows 64-bit» από τη σελίδα που άνοιξε…")
+        threading.Thread(target=self._wait_for_installer, args=(time.time(),), daemon=True,
+                         name="dcpomatic-wait").start()
+
+    def _wait_for_installer(self, since, timeout=3600):
+        try:
+            while time.time() - since < timeout:
+                info = find_dcpomatic()
+                if info:  # το εγκατέστησε ο χρήστης μόνος του
+                    self.jobs.call_in_gui(lambda: self._dcpomatic_ready(info))
+                    return
+                inst = find_downloaded_installer(since)
+                if inst:
+                    self.jobs.call_in_gui(lambda: self._offer_install(inst))
+                    return
+                time.sleep(3)
+            self.jobs.call_in_gui(lambda: self.status_var.set("Δεν βρέθηκε το DCP-o-matic (σταμάτησε η αναμονή)"))
+        finally:
+            self._waiting_install = False
+
+    def _offer_install(self, installer):
+        if not messagebox.askyesno(APP_NAME, f"Κατέβηκε ο installer:\n{os.path.basename(installer)}\n\n"
+                                             "Να γίνει η εγκατάσταση τώρα;", parent=self._convert_parent()):
+            return
+        self.when_idle(lambda: self.start_job("Εγκατάσταση DCP-o-matic", lambda p, c: self._install_job(installer, p)))
+
+    def _install_job(self, installer, progress):
+        progress(0.5, "Εγκατάσταση DCP-o-matic: αποδέξου το μήνυμα των Windows…")
+        info = install(installer)
+        self.jobs.call_in_gui(lambda: self._dcpomatic_ready(info))
+
+    def _dcpomatic_ready(self, info):
+        win = getattr(self, "convert_win", None)
+        if win and win.win.winfo_exists():
+            win.set_tools(info)
+        self.status_var.set(f"DCP-o-matic {info['version']}: έτοιμο")
+        self.info_box(f"Το DCP-o-matic {info['version']} είναι έτοιμο. Μπορείς να ξεκινήσεις τη μετατροπή.")
+
+    def run_convert(self, infos, opts, out_dir):
+        n = 1 if opts["mode"] == "single" else len(infos)
+        log.info("Μετατροπή σε DCP: %d αρχεία -> %d DCP στο %s (%s)", len(infos), n, out_dir, opts)
+        self.start_job("Μετατροπή σε DCP", lambda progress, cancel: self._convert_job(infos, opts, out_dir,
+                                                                                      progress, cancel))
+
+    def _convert_job(self, infos, opts, out_dir, progress, cancel):
+        results = convert(infos, opts, out_dir, progress, cancel)
+        # μετά το κλείσιμο αυτής της εργασίας, ώστε να μπορεί να ξεκινήσει η φόρτωση
+        self.jobs.call_in_gui(lambda: self.when_idle(lambda: self._after_convert(results, out_dir)))
+
+    def _after_convert(self, results, out_dir):
+        """Φόρτωση του φακέλου εξόδου και αυτόματος έλεγχος (hash + σάρωση) των νέων DCP."""
+        self.load(out_dir)
+        wanted = {os.path.normcase(os.path.abspath(r)) for r in results}
+        self.when_idle(lambda: self._check_new_dcps(wanted))
+
+    def _check_new_dcps(self, folders):
+        idx = [i for i, it in enumerate(self.items) if os.path.normcase(os.path.abspath(it["cpl"].folder)) in folders]
+        if not idx:
+            return
+        for i in idx:
+            self.tree.selection_add(str(i))
+
+        def work(i, p, cancel):
+            c = self.items[i]["cpl"]
+            self.items[i]["hash"] = verify_cpl(c, lambda d, t, n: p(0.3 * d / max(1, t), f"hash {n[:30]}"), cancel)
+            self.items[i]["scan"] = scan_cpl(c, lambda f, m: p(0.3 + 0.7 * f, m), cancel)
+
+        self.start_job("Έλεγχος νέων DCP", self._per_item_job(idx, "Έλεγχος", work))
+        self.when_idle(lambda: self._report_new(idx))
+
+    def _report_new(self, idx):
+        lines = [f"{item_row(self.items[i])['Κατάσταση']:<8} {self.items[i]['cpl'].title}" for i in idx]
+        self.info_box("Η μετατροπή τελείωσε και τα DCP ελέγχθηκαν:\n\n" + "\n".join(lines) +
+                      "\n\nΛεπτομέρειες στη λίστα (επίλεξε το καθένα).")
+
     def edit_spec(self):
         def saved(spec):
             self.spec = spec

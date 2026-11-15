@@ -13,7 +13,7 @@ APP_NAME = "ReelCheck"
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4"
 PLAYER_ENDED = 10  # κωδικός εξόδου του player όταν η ταινία τελειώνει μόνη της (--autoexit)
 
 
