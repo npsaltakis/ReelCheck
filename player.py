@@ -4,7 +4,7 @@
 Πλήκτρα:
   Space παύση | ← → ±10s (Shift ±60s) | , . καρέ-καρέ | PgUp/PgDn reel | Home αρχή
   F πλήρης οθόνη | H μισή ανάλυση | S υπότιτλοι on/off | L αλλαγή υποτίτλων
-  0 όλα τα κανάλια | 1-9 solo καναλιού | A μετρητές ήχου | M σίγαση
+  0 όλα τα κανάλια | 1-9 solo καναλιού | A μετρητές ήχου (αυτόματα / πάντα / κρυφοί) | M σίγαση
   N νέα σημείωση | J / Shift+J επόμενη/προηγ. σημείωση | Ctrl+Z σβήσιμο τελευταίας σημείωσης
   P screenshot | E αριστερό/δεξί μάτι (3D) | Esc / Q έξοδος
 """
@@ -409,7 +409,7 @@ def play(target, start=0.0, lowres=None, fullscreen=False):
 
     notes = load_notes(cpl)
     stereo = any(r.stereo for r in cpl.reels)
-    state = {"muted": False, "eye": 0, "solo": None, "meters": False}
+    state = {"muted": False, "eye": 0, "solo": None, "meters": "auto"}  # auto: με το OSD | on | off
     toast = ["", 0.0]
 
     def say(msg):
@@ -597,7 +597,10 @@ def play(target, start=0.0, lowres=None, fullscreen=False):
                     if pb.audio:
                         pb.audio.muted = state["muted"]
                 elif k == pygame.K_a:
-                    state["meters"] = not state["meters"]
+                    nxt = {"auto": "on", "on": "off", "off": "auto"}[state["meters"]]
+                    state["meters"] = nxt
+                    say({"auto": "Μετρητές ήχου: αυτόματα (με τα χειριστήρια)",
+                         "on": "Μετρητές ήχου: πάντα", "off": "Μετρητές ήχου: κρυφοί"}[nxt])
                 elif pygame.K_0 <= k <= pygame.K_9 or pygame.K_KP0 <= k <= pygame.K_KP9:
                     n = (k - pygame.K_0) if k <= pygame.K_9 else (k - pygame.K_KP0)
                     nch = pb.audio.nch if pb.audio else 0
@@ -609,7 +612,8 @@ def play(target, start=0.0, lowres=None, fullscreen=False):
                         say(f"Ήχος: solo κανάλι {n} ({CH_NAMES[n - 1] if n <= len(CH_NAMES) else n})")
                     if pb.audio:
                         pb.audio.solo = state["solo"]
-                    state["meters"] = state["meters"] or n > 0
+                    if n > 0 and state["meters"] == "auto":
+                        state["meters"] = "on"
                 elif k == pygame.K_n:
                     note_mode, note_text = True, ""
                     pb.set_paused(True)
@@ -695,7 +699,7 @@ def play(target, start=0.0, lowres=None, fullscreen=False):
             for i, v in enumerate(p):
                 meter_vals[i] = max(float(v), meter_vals[i] * 0.88)
         show_osd = pb.paused or time.time() - last_mouse < 2.5 or not current or note_mode
-        if pb.audio and meter_vals and (state["meters"] or show_osd):
+        if pb.audio and meter_vals and (state["meters"] == "on" or (state["meters"] == "auto" and show_osd)):
             import math
             n = len(meter_vals)
             bw, gap, mh = 14, 6, 140
