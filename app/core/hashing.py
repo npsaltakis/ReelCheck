@@ -1,11 +1,10 @@
 """Έλεγχος αρχείων με το PKL (μέγεθος + SHA-1), με cache."""
-import json
 import os
 import threading
 
-from app.core.config import APP_DIR, HASH_CACHE_FILE, log
-from app.core.dcp import read_pkls
-from app.core.util import fmt_size, sha1_file
+from app.core.config import HASH_CACHE_FILE, log
+from app.core.dcp import cpl_pkl
+from app.core.util import fmt_size, load_json, save_json, sha1_file
 
 
 # ----------------------------------------------------------------- HASH (PKL)
@@ -13,11 +12,7 @@ _hash_lock = threading.Lock()
 
 
 def _hash_cache():
-    try:
-        with open(HASH_CACHE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    return load_json(HASH_CACHE_FILE, {})
 
 
 def cache_key(path):
@@ -35,11 +30,9 @@ def _hash_cache_put(key, value):
         c = _hash_cache()
         c[key] = value
         try:
-            os.makedirs(APP_DIR, exist_ok=True)
-            with open(HASH_CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(c, f)
+            save_json(HASH_CACHE_FILE, c)
         except OSError:
-            pass
+            log.exception("Αποθήκευση cache hash")
 
 
 def verify_cpl(cpl, progress=None, cancel=None):
@@ -47,10 +40,7 @@ def verify_cpl(cpl, progress=None, cancel=None):
     Έλεγχος αρχείων του CPL με το PKL (μέγεθος + SHA-1).
     progress(done_bytes, total_bytes, όνομα αρχείου). Επιστρέφει λίστα αποτελεσμάτων.
     """
-    pkl = read_pkls(cpl.folder)
-    for d in set(cpl.external.values()):  # τα assets του OV ελέγχονται με το PKL του OV
-        for k, v in read_pkls(d).items():
-            pkl.setdefault(k, v)
+    pkl = cpl_pkl(cpl)  # τα assets του OV ελέγχονται με το PKL του OV
     items = [(cpl.id, cpl.path)] + list(cpl.assets.items())
     results, todo = [], []
     for aid, f in items:

@@ -92,3 +92,53 @@ def reel_audio(reel, rate, skip=0.0, limit=None, channels=None, stop=None):
             a = a[:need]
             need -= len(a)
             yield a
+
+
+class ReelPos:
+    """Αρίθμηση καρέ ενός reel: δείκτης καρέ από timestamp (στα 3D δύο καρέ ανά εικόνα) και χρόνος ταινίας."""
+
+    def __init__(self, reel, stream, offset_frames):
+        self.reel = reel
+        self.mult = 2 if reel.stereo else 1
+        self.first = (reel.pic_entry + offset_frames) * self.mult
+        self.last = (reel.pic_entry + reel.dur) * self.mult
+        self.tb, self.st0 = stream.time_base, stream.start_time or 0
+        self.frate = reel.rate * self.mult
+        self.counter = self.first - 1
+
+    def index(self, ts):
+        return int(round((ts - self.st0) * self.tb * self.frate))
+
+    def next_counter(self):
+        """Για καρέ χωρίς timestamp: ο επόμενος αύξων αριθμός."""
+        self.counter += 1
+        return self.counter
+
+    def time(self, idx):
+        return self.reel.start + (idx // self.mult - self.reel.pic_entry) / float(self.reel.rate)
+
+
+def reel_frames(reel, skip=0.0, limit=None, stop=None, lowres=None):
+    """
+    Γεννήτρια (χρόνος από την αρχή του reel, av.VideoFrame): από EntryPoint+skip, το πολύ limit δευτ.,
+    μόνο το αριστερό μάτι στα 3D. lowres: '1'/'2' για γρήγορη αποκωδικοποίηση JPEG2000. Σταματά αν stop.is_set().
+    """
+    import av
+    with av.open(reel.pic) as c:
+        vs = c.streams.video[0]
+        vs.thread_type = "AUTO"
+        if lowres and vs.codec_context.name == "jpeg2000":
+            vs.codec_context.options = {"lowres": str(lowres)}
+        pos = ReelPos(reel, vs, max(0, int(round(skip * float(reel.rate)))))
+        last_t = reel.seconds if limit is None else min(reel.seconds, skip + limit)
+        seek_seconds(c, vs, pos.first / pos.frate)
+        for fr in c.decode(vs):
+            if stop is not None and stop.is_set():
+                return
+            idx = pos.index(fr.pts) if fr.pts is not None else pos.next_counter()
+            if idx < pos.first or (pos.mult == 2 and idx % 2):
+                continue
+            t = pos.time(idx) - reel.start
+            if idx >= pos.last or t >= last_t:
+                return
+            yield t, fr

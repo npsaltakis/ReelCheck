@@ -6,35 +6,11 @@ import time
 from app.core.config import log
 from app.core.util import fmt_time
 from app.core import prefs
-from app.core.avio import reel_audio, seek_seconds
+from app.core.avio import ReelPos, reel_audio, seek_seconds
 from app.player.audio import AudioOut, END, device_index, put
 
 
 INTRA_CODECS = {"jpeg2000", "prores", "dnxhd", "mjpeg", "ffv1", "huffyuv", "cfhd", "rawvideo", "v210", "png", "tiff"}
-
-
-class _ReelPos:
-    """Αρίθμηση καρέ ενός reel: δείκτης καρέ από timestamp (στα 3D δύο καρέ ανά εικόνα) και χρόνος ταινίας."""
-
-    def __init__(self, reel, stream, offset_frames):
-        self.reel = reel
-        self.mult = 2 if reel.stereo else 1
-        self.first = (reel.pic_entry + offset_frames) * self.mult
-        self.last = (reel.pic_entry + reel.dur) * self.mult
-        self.tb, self.st0 = stream.time_base, stream.start_time or 0
-        self.frate = reel.rate * self.mult
-        self.counter = self.first - 1
-
-    def index(self, ts):
-        return int(round((ts - self.st0) * self.tb * self.frate))
-
-    def next_counter(self):
-        """Για καρέ χωρίς timestamp: ο επόμενος αύξων αριθμός."""
-        self.counter += 1
-        return self.counter
-
-    def time(self, idx):
-        return self.reel.start + (idx // self.mult - self.reel.pic_entry) / float(self.reel.rate)
 
 
 class LoudnessTrack:
@@ -186,7 +162,7 @@ class Playback:
             cc = vs.codec_context
             if self.lowres and cc.name == "jpeg2000":
                 cc.options = {"lowres": str(self.lowres)}
-            pos = _ReelPos(reel, vs, off)
+            pos = ReelPos(reel, vs, off)
             seek_seconds(c, vs, pos.first / pos.frate)
             intra = cc.name in INTRA_CODECS
             for pkt in c.demux(vs):

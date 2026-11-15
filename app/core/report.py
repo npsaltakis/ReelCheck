@@ -148,3 +148,70 @@ def write_report(items, path):
     with open(path, "w", encoding="utf-8") as f:
         f.write(tr_html("\n".join(out)))  # στα αγγλικά μεταφράζεται το κείμενο (όχι οι τίτλοι ταινιών)
     log.info("Αναφορά: %s (%d ταινίες)", path, len(rows))
+
+
+# ======================================================================== ΑΝΑΦΟΡΑ ΓΙΑ ΤΗΝ ΕΠΙΤΡΟΠΗ (PDF)
+_COMMITTEE_CSS = """
+@page{size:A4;margin:14mm}
+body{font-family:Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:12.5px}
+.page{page-break-after:always}.page:last-child{page-break-after:auto}
+.cover h1{font-size:28px;margin:40mm 0 6px}.cover .sub{font-size:15px;color:#444}
+.cover table{margin-top:14mm;width:100%;border-collapse:collapse}
+.cover td,.cover th{border:1px solid #bbb;padding:5px 7px;text-align:left}.cover th{background:#eee}
+h2{font-size:20px;margin:0 0 2px}.meta{color:#555;margin-bottom:8px}
+.frames{display:flex;gap:6px;margin:8px 0}.frames img{width:32.6%;border:1px solid #999}
+.kv{border-collapse:collapse;width:100%}.kv td{border-bottom:1px solid #ddd;padding:4px 6px;vertical-align:top}
+.kv td:first-child{color:#555;width:32mm}
+.st{display:inline-block;padding:2px 8px;border-radius:4px;color:#fff;font-weight:600;font-size:12px}
+.OK{background:#137333}.ΠΡΟΣΟΧΗ{background:#b06000}.ΣΦΑΛΜΑ{background:#c5221f}
+ul{margin:4px 0 0 18px;padding:0}li.err{color:#c5221f}li.warn{color:#b06000}li.info{color:#555}
+.comments{border:1px solid #999;height:45mm;margin-top:10px;padding:6px;color:#777}
+.small{color:#666;font-size:11px}
+"""
+
+
+def write_committee_report(items, path, frames=None, title="Ταινίες για την επιτροπή"):
+    """
+    HTML για εκτύπωση σε PDF: εξώφυλλο με πίνακα και μία σελίδα ανά ταινία με τρία καρέ, στοιχεία,
+    ευρήματα, σημειώσεις και χώρο για τα σχόλια της επιτροπής. frames: {index: [png, ...]}.
+    """
+    esc = html.escape
+    rows = [item_row(i) for i in items]
+    out = [f"<!doctype html><html lang='el'><head><meta charset='utf-8'><title>{esc(title)}</title>"
+           f"<style>{_COMMITTEE_CSS}</style></head><body>",
+           f"<div class='page cover'><h1>{esc(title)}</h1><div class='sub'>{len(items)} ταινίες · "
+           f"{datetime.datetime.now():%d/%m/%Y}</div><table><tr><th>#</th><th>Τίτλος</th><th>Είδος</th>"
+           "<th>Διάρκεια</th><th>Κατάσταση</th></tr>"]  # (το εξώφυλλο κλείνει μετά τον πίνακα)
+    for n, r in enumerate(rows, 1):
+        out.append(f"<tr><td>{n}</td><td>{esc(r['Τίτλος'])}</td><td>{esc(r['Είδος'])}</td>"
+                   f"<td>{esc(r['Διάρκεια'])}</td><td>{esc(r['Κατάσταση'])}</td></tr>")
+    out.append("</table>")
+    out.append(f"<p class='small'>{APP_NAME} v{APP_VERSION}</p></div>")
+    for n, (item, r) in enumerate(zip(items, rows), 1):
+        out.append(_committee_page(n, item, r, (frames or {}).get(n - 1) or [item.get("thumb")]))
+    out.append("</body></html>")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(tr_html("\n".join(out)))
+
+
+def _committee_page(n, item, r, pngs):
+    esc = html.escape
+    c = item["cpl"]
+    out = [f"<div class='page'><h2>{n}. {esc(c.title)}</h2>"
+           f"<div class='meta'><span class='st {r['Κατάσταση']}'>{esc(r['Κατάσταση'])}</span> &nbsp; "
+           f"{esc(r['Είδος'])} · {esc(r['Διάρκεια'])}</div><div class='frames'>"]
+    out += [f"<img src='data:image/png;base64,{base64.b64encode(p).decode()}'>" for p in pngs if p]
+    out.append("</div><table class='kv'>")
+    for k in ("Εικόνα", "3D", "fps", "Ήχος", "Υπότιτλοι", "Κρυπτογρ.", "Αρχεία", "Hash", "Παρατηρήσεις"):
+        out.append(f"<tr><td>{k}</td><td>{esc(str(r[k]))}</td></tr>")
+    out.append("</table>")
+    issues = [(lv, t) for lv, t in (item.get("issues") or []) if lv in ("err", "warn")]
+    if issues:
+        out.append("<p><b>Ευρήματα ελέγχου</b></p><ul>" +
+                   "".join(f"<li class='{lv}'>{esc(t)}</li>" for lv, t in issues[:12]) + "</ul>")
+    notes = item.get("notes")
+    if notes:
+        out.append("<p><b>Σημειώσεις</b></p><ul>" +
+                   "".join(f"<li>{fmt_time(x['t'])} — {esc(x['text'])}</li>" for x in notes[:10]) + "</ul>")
+    out.append("<div class='comments'>Σχόλια επιτροπής:</div></div>")
+    return "".join(out)

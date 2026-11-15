@@ -15,7 +15,7 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from app.core.config import APP_NAME, APP_VERSION, get_setting, log, set_setting
+from app.core.config import APP_NAME, APP_VERSION, NO_WINDOW, get_setting, log, set_setting
 from app.core.util import Cancelled
 from app.core.util import is_dcp_folder
 
@@ -23,7 +23,6 @@ DOWNLOAD_PAGE = "https://dcpomatic.com/download"
 DCP_TIME_RATE = 96000          # μονάδες χρόνου του DCP-o-matic ανά δευτερόλεπτο
 REEL_BY_VIDEO = "1"            # ReelType: 0 = ένα reel, 1 = ένα reel ανά βίντεο, 2 = ανά διάρκεια
 CONTENT_TYPES = ("FTR", "SHR", "TLR", "TSR", "ADV", "PSA", "POL", "TST", "XSN", "RTG")
-NO_WINDOW = 0x08000000         # CREATE_NO_WINDOW
 _HEADERS = {"User-Agent": f"{APP_NAME}/{APP_VERSION}"}
 
 

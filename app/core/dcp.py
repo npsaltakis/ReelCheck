@@ -197,6 +197,15 @@ def find_dcps(folder):
     return out
 
 
+def cpl_pkl(cpl):
+    """PKL του CPL: id -> {hash, size, name}, μαζί με τα assets του OV για ένα VF."""
+    pkl = read_pkls(cpl.folder)
+    for d in set(cpl.external.values()):
+        for k, v in read_pkls(d).items():
+            pkl.setdefault(k, v)
+    return pkl
+
+
 def read_pkls(folder):
     """id -> {hash, size, name} από όλα τα PKL του φακέλου."""
     out = {}

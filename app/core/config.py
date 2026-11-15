@@ -1,5 +1,4 @@
 """Ρυθμίσεις, διαδρομές αρχείων και logging."""
-import json
 import logging
 import logging.handlers
 import os
@@ -9,11 +8,14 @@ import sys
 import threading
 import traceback
 
+from app.core.util import load_json, save_json
+
 APP_NAME = "ReelCheck"
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-APP_VERSION = "1.8"
+APP_VERSION = "1.9"
+NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: εξωτερικά προγράμματα χωρίς παράθυρο κονσόλας
 PLAYER_ENDED = 10  # κωδικός εξόδου του player όταν η ταινία τελειώνει μόνη της (--autoexit)
 
 
@@ -54,26 +56,18 @@ SETTINGS_FILE = os.path.join(APP_DIR, "settings.json")
 
 
 def get_setting(key, default=None):
-    try:
-        with open(SETTINGS_FILE, encoding="utf-8") as f:
-            return json.load(f).get(key, default)
-    except (OSError, ValueError):
-        return default
+    s = load_json(SETTINGS_FILE, {})
+    return s.get(key, default) if isinstance(s, dict) else default
 
 
 def set_setting(key, value):
-    try:
-        with open(SETTINGS_FILE, encoding="utf-8") as f:
-            s = json.load(f)
-    except (OSError, ValueError):
-        s = {}
+    s = load_json(SETTINGS_FILE, {})
+    s = s if isinstance(s, dict) else {}
     s[key] = value
     try:
-        os.makedirs(APP_DIR, exist_ok=True)
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False, indent=1)
+        save_json(SETTINGS_FILE, s, indent=1)
     except OSError:
-        pass
+        log.exception("Αποθήκευση ρυθμίσεων")
 
 
 def migrate_old_data():

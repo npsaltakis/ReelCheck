@@ -15,7 +15,7 @@ import sys
 import tempfile
 import urllib.request
 
-from app.core.config import APP_NAME, APP_VERSION, log
+from app.core.config import APP_NAME, APP_VERSION, NO_WINDOW, log
 from app.core.util import Cancelled
 
 GITHUB_REPO = "npsaltakis/ReelCheck"
@@ -150,7 +150,7 @@ def install_update(new_exe, current_exe=None, restart=True):
     """
     current_exe = current_exe or sys.executable
     bat = write_swap_script(new_exe, current_exe, restart)
-    flags = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED_PROCESS | NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+    flags = 0x00000008 | 0x00000200 | NO_WINDOW  # DETACHED_PROCESS | NEW_PROCESS_GROUP
     subprocess.Popen(["cmd", "/c", bat], creationflags=flags, close_fds=True, cwd=os.path.dirname(bat))
     log.info("Αναβάθμιση: %s -> %s", new_exe, current_exe)
     return bat

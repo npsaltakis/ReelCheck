@@ -73,28 +73,43 @@ class SpecForm:
                 "no_encrypted": bool(self.no_enc.get()), "no_3d": bool(self.no_3d.get())}
 
 
-class CatalogWindow:
+class TableWindow:
+    """
+    Παράθυρο με πίνακα αποτελεσμάτων και «Εξαγωγή CSV». columns: [(τίτλος, πλάτος)].
+    tag_of(row): ετικέτα χρώματος της γραμμής (π.χ. 'err', 'ok'), tags: [(ετικέτα, κλειδί παλέτας)].
+    """
+
+    def __init__(self, parent, theme, title, summary, columns, rows, csv_name="Πίνακας.csv", stretch=1,
+                 tag_of=None, tags=(), size="1000x520"):
+        self.rows, self.header, self.csv_name = rows, [c[0] for c in columns], csv_name
+        self.win = w = tk.Toplevel(parent)
+        w.title(title)
+        w.geometry(size)
+        theme.toplevel(w, parent)
+        ttk.Label(w, padding=8, text=summary, wraplength=960, justify="left").pack(anchor="w")
+        keys = [f"c{i}" for i in range(len(columns))]
+        tv = make_tree(w, [(k, t, wd) for k, (t, wd) in zip(keys, columns)], stretch=(keys[stretch],))
+        theme.tag_tree(tv, extra=list(tags))
+        for r in rows:
+            tv.insert("", "end", values=r, tags=(tag_of(r),) if tag_of else ())
+        tv.pack(fill="both", expand=True, padx=8)
+        ttk.Button(w, text="Εξαγωγή CSV", command=self._export).pack(anchor="e", padx=8, pady=8)
+        self.tree = tv
+
+    def _export(self):
+        out = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv", initialfile=self.csv_name,
+                                           filetypes=[("CSV (Excel)", "*.csv")])
+        if out:
+            write_excel_csv(out, self.header, self.rows)
+            os.startfile(out)
+
+
+class CatalogWindow(TableWindow):
     """Αποτέλεσμα αντιστοίχισης καταλόγου φεστιβάλ με τα DCP. rows: [(τίτλος, DCP, κατάσταση)]."""
 
     HEADER = ("Τίτλος καταλόγου", "DCP που βρέθηκε", "Κατάσταση")
 
     def __init__(self, parent, theme, title, summary, rows):
-        self.rows = rows
-        self.win = w = tk.Toplevel(parent)
-        w.title(f"Κατάλογος φεστιβάλ: {title}")
-        w.geometry("1000x520")
-        theme.toplevel(w, parent)
-        ttk.Label(w, padding=8, text=summary).pack(anchor="w")
-        tv = make_tree(w, list(zip(("a", "b", "c"), self.HEADER, (260, 560, 100))), stretch=("b",))
-        theme.tag_tree(tv, extra=[("ΛΕΙΠΕΙ", "err")])
-        for r in rows:
-            tv.insert("", "end", values=r, tags=(r[2],))
-        tv.pack(fill="both", expand=True, padx=8)
-        ttk.Button(w, text="Εξαγωγή CSV", command=self._export).pack(anchor="e", padx=8, pady=8)
-
-    def _export(self):
-        out = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv",
-                                           initialfile="Κατάλογος_έλεγχος.csv", filetypes=[("CSV (Excel)", "*.csv")])
-        if out:
-            write_excel_csv(out, self.HEADER, self.rows)
-            os.startfile(out)
+        super().__init__(parent, theme, f"Κατάλογος φεστιβάλ: {title}", summary,
+                         list(zip(self.HEADER, (260, 560, 100))), rows, "Κατάλογος_έλεγχος.csv",
+                         tag_of=lambda r: r[2], tags=[("ΛΕΙΠΕΙ", "err")])

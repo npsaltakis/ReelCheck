@@ -1,9 +1,9 @@
 """Σημειώσεις στον χρόνο ανά CPL."""
 import hashlib
-import json
 import os
 
 from app.core.config import NOTES_DIR, log
+from app.core.util import load_json, save_json
 
 
 # ----------------------------------------------------------------- ΣΗΜΕΙΩΣΕΙΣ
@@ -13,18 +13,13 @@ def _notes_path(cpl):
 
 
 def load_notes(cpl):
-    try:
-        with open(_notes_path(cpl), encoding="utf-8") as f:
-            return sorted(json.load(f).get("notes", []), key=lambda n: n["t"])
-    except (OSError, ValueError):
-        return []
+    data = load_json(_notes_path(cpl), {})
+    return sorted(data.get("notes", []) if isinstance(data, dict) else [], key=lambda n: n["t"])
 
 
 def save_notes(cpl, notes):
     try:
-        os.makedirs(NOTES_DIR, exist_ok=True)
-        with open(_notes_path(cpl), "w", encoding="utf-8") as f:
-            json.dump({"title": cpl.title, "path": cpl.path,
-                       "notes": sorted(notes, key=lambda n: n["t"])}, f, ensure_ascii=False, indent=1)
+        save_json(_notes_path(cpl), {"title": cpl.title, "path": cpl.path,
+                                     "notes": sorted(notes, key=lambda n: n["t"])}, indent=1)
     except OSError:
         log.exception("Δεν σώθηκαν οι σημειώσεις")

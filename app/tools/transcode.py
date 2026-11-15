@@ -9,7 +9,7 @@ import os
 import shutil
 from fractions import Fraction
 
-from app.core.avio import fit_channels, reel_audio, seek_seconds
+from app.core.avio import fit_channels, reel_audio, reel_frames
 from app.core.config import log
 from app.core.util import check_cancel
 
@@ -453,26 +453,17 @@ class AudioFeeder:
 
 def _dcp_reel_frames(reel, max_h, cancel):
     """Γεννήτρια καρέ (av.VideoFrame) ενός reel: μόνο το αριστερό μάτι στα 3D, από EntryPoint για Duration καρέ."""
+    # 4K DCP: αποκωδικοποίηση κατευθείαν σε 2K όταν η έξοδος είναι έως 1080p
+    lowres = "1" if max_h and max_h <= 1080 and _is_4k(reel) else None
+    for _t, fr in reel_frames(reel, stop=cancel, lowres=lowres):
+        yield fr
+    check_cancel(cancel)
+
+
+def _is_4k(reel):
     import av
     with av.open(reel.pic) as c:
-        vs = c.streams.video[0]
-        vs.thread_type = "AUTO"
-        if vs.codec_context.name == "jpeg2000" and max_h and max_h <= 1080 and (vs.codec_context.height or 0) > 2000:
-            vs.codec_context.options = {"lowres": "1"}  # 4K DCP: αποκωδικοποίηση κατευθείαν σε 2K
-        mult = 2 if reel.stereo else 1
-        st0 = vs.start_time or 0
-        first, last = reel.pic_entry * mult, (reel.pic_entry + reel.dur) * mult
-        seek_seconds(c, vs, Fraction(first) / (reel.rate * mult))
-        counter = first - 1
-        for fr in c.decode(vs):
-            check_cancel(cancel)
-            counter += 1
-            idx = int(round((fr.pts - st0) * vs.time_base * reel.rate * mult)) if fr.pts is not None else counter
-            if idx < first or (mult == 2 and idx % 2):
-                continue
-            if idx >= last:
-                break
-            yield fr
+        return (c.streams.video[0].codec_context.height or 0) > 2000
 
 
 class _DcpEncoder:

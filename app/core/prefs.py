@@ -12,11 +12,17 @@ DEFAULTS = {
     "theme": "auto",                # auto | light | dark
     "update_auto": True,            # έλεγχος για νέα έκδοση μία φορά την ημέρα
     "open_last_folder": True,       # άνοιγμα στον τελευταίο φάκελο
+    "notify_done": True,            # ειδοποίηση των Windows όταν τελειώνει μεγάλη εργασία
+    "notify_min_seconds": 20,       # ... που κράτησε τουλάχιστον τόσα δευτ.
     # φάκελοι
     "ingest_dest": "",              # φάκελος του φεστιβάλ (παραλαβές)
     "convert_out": "",              # έξοδος «Βίντεο → DCP»
     "transcode_out": "",            # έξοδος «Μετατροπή βίντεο» (κενό = δίπλα στο πρωτότυπο)
     "shots_dir": "",                # screenshots (κενό = Εικόνες\ReelCheck)
+    "watch_enabled": False,         # παρακολούθηση φακέλου για νέα DCP
+    "watch_folder": "",
+    "watch_check": True,            # αυτόματος έλεγχος (hash + σάρωση) του νέου DCP
+    "watch_interval": 20,           # δευτ. ανάμεσα στους ελέγχους
     # αναπαραγωγή
     "play_fullscreen": False,
     "play_half": False,
@@ -38,6 +44,7 @@ DEFAULTS = {
     "lufs_check": False,            # προειδοποίηση για ένταση εκτός στόχου
     "lufs_target": -24.0,
     "lufs_tolerance": 3.0,
+    "sync_seconds": 120,            # συγχρονισμός ήχου-εικόνας: πόσα δευτ. από την αρχή αναλύονται
 }
 
 

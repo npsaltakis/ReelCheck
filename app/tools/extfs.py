@@ -10,6 +10,8 @@ import os
 import stat
 import struct
 
+from app.core.config import NO_WINDOW
+
 EXT_MAGIC = 0xEF53
 INCOMPAT_EXTENTS = 0x40
 INCOMPAT_64BIT = 0x80
@@ -346,7 +348,7 @@ def list_linux_partitions():
           "mbr=$_.MbrType; gpt=\"$($_.GptType)\"; letter=\"$($_.DriveLetter)\"; model=$d.FriendlyName; "
           "bus=\"$($d.BusType)\"} } | ConvertTo-Json -Compress")
     r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=60, creationflags=0x08000000)
+                       encoding="utf-8", errors="replace", timeout=60, creationflags=NO_WINDOW)
     try:
         rows = json.loads(r.stdout or "[]")
     except ValueError:

@@ -4,13 +4,12 @@
 """
 import datetime
 import html
-import json
 import os
 import uuid
 
 from app.core.config import APP_DIR, APP_NAME, APP_VERSION
 from app.core.i18n import tr, tr_html
-from app.core.util import write_excel_csv
+from app.core.util import load_json, save_json, write_excel_csv
 
 SCHEDULE_FILE = os.path.join(APP_DIR, "schedule.json")
 DATE_FMT, TIME_FMT = "%d/%m/%Y", "%H:%M"
@@ -21,18 +20,12 @@ def new_screening(date, time, room, title, minutes, extra=0, cpl_id=None, notes=
             "minutes": float(minutes or 0), "extra": float(extra or 0), "cpl_id": cpl_id, "notes": notes.strip()}
 
 
-def load(path=SCHEDULE_FILE):
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return []
+def load(path=None):
+    return load_json(path or SCHEDULE_FILE, [])
 
 
-def save(screenings, path=SCHEDULE_FILE):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(screenings, f, ensure_ascii=False, indent=1)
+def save(screenings, path=None):
+    save_json(path or SCHEDULE_FILE, screenings, indent=1)
 
 
 def parse_when(date, time):
@@ -120,3 +113,99 @@ def write_html(screenings, path, status_of=lambda s: "", title="Πρόγραμμ
     out.append(f"<p class='small'>{APP_NAME} v{APP_VERSION}</p></body></html>")
     with open(path, "w", encoding="utf-8") as f:
         f.write(tr_html("\n".join(out)))
+
+
+# ======================================================================== ΗΜΕΡΟΛΟΓΙΟ (.ics)
+def _ics_text(s):
+    """Κείμενο iCalendar: διαφυγή των \\ ; , και αλλαγών γραμμής."""
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_fold(line):
+    """Γραμμές έως 75 bytes (RFC 5545), οι συνέχειες αρχίζουν με κενό."""
+    out, cur = [], ""
+    for ch in line:
+        if len((cur + ch).encode("utf-8")) > 74:
+            out.append(cur)
+            cur = " "
+        cur += ch
+    out.append(cur)
+    return "\r\n".join(out)
+
+
+def write_ics(screenings, path, status_of=lambda s: "", calendar="Πρόγραμμα προβολών"):
+    """Ημερολόγιο για Google / Outlook / κινητό: μία εκδήλωση ανά προβολή (τοπική ώρα)."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:-//{APP_NAME}//{APP_VERSION}//EL", "CALSCALE:GREGORIAN",
+             f"X-WR-CALNAME:{_ics_text(tr(calendar))}"]
+    for s in sorted(screenings, key=sort_key):
+        try:
+            start, end = start_end(s)
+        except ValueError:
+            continue
+        desc = "\n".join(x for x in (s.get("notes", ""), (tr("DCP") + ": " + tr(status_of(s))) if status_of(s) else "")
+                         if x)
+        lines += ["BEGIN:VEVENT", f"UID:{s['id']}@reelcheck", f"DTSTAMP:{stamp}",
+                  f"DTSTART:{start:%Y%m%dT%H%M%S}", f"DTEND:{end:%Y%m%dT%H%M%S}",
+                  f"SUMMARY:{_ics_text(s['title'])} ({_ics_text(s['room'])})", f"LOCATION:{_ics_text(s['room'])}"]
+        if desc:
+            lines.append(f"DESCRIPTION:{_ics_text(desc)}")
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write("\r\n".join(_ics_fold(l) for l in lines) + "\r\n")
+
+
+# ======================================================================== ΦΥΛΛΑ ΜΗΧΑΝΙΚΟΥ ΠΡΟΒΟΛΗΣ
+_SHEET_CSS = (
+    "body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#000}"
+    ".page{page-break-after:always;margin-bottom:40px}.page:last-child{page-break-after:auto}"
+    "h1{font-size:22px;margin:0}.sub{color:#444;margin:2px 0 14px}"
+    "table{border-collapse:collapse;width:100%}th,td{border:1px solid #888;padding:7px 8px;font-size:13px;"
+    "text-align:left;vertical-align:top}th{background:#eee}.box{width:22px;text-align:center;font-size:16px}"
+    ".big{font-size:16px;font-weight:600}.warn{color:#b06000;font-weight:600}.err{color:#c5221f;font-weight:600}"
+    ".small{color:#555;font-size:12px}.sign{margin-top:28px;font-size:13px}"
+    "@media print{body{margin:10mm}}")
+
+
+def write_day_sheets(screenings, path, details_of=lambda s: {}, title="Φύλλο προβολών"):
+    """
+    Μία σελίδα ανά μέρα και αίθουσα για τον μηχανικό προβολής, με κουτάκια για έλεγχο.
+    details_of(s) -> {"status", "format", "audio", "subs", "kdm", "duration"} για το DCP της προβολής.
+    """
+    esc = html.escape
+    clash = conflicts(screenings)
+    pages = {}
+    for s in sorted(screenings, key=sort_key):
+        pages.setdefault((s["date"], s["room"]), []).append(s)
+    out = [f"<!doctype html><html lang='el'><head><meta charset='utf-8'><title>{esc(title)}</title>"
+           f"<style>{_SHEET_CSS}</style></head><body>"]
+    for (day, room), items in pages.items():
+        out.append(f"<div class='page'><h1>{esc(room)} · {esc(day)}</h1>"
+                   f"<div class='sub'>{esc(title)} · {len(items)} προβολές</div><table><tr><th>Ώρα</th><th>Λήξη</th>"
+                   "<th>Ταινία</th><th>Μορφή</th><th>Υπότιτλοι</th><th>DCP / KDM</th><th class='box'>Server</th>"
+                   "<th class='box'>Test</th><th class='box'>Προβλ.</th><th>Παρατηρήσεις</th></tr>")
+        for s in items:
+            out.append(_sheet_row(s, details_of(s) or {}, s["id"] in clash))
+        out.append("</table><div class='sign'>Μηχανικός προβολής: ______________________ "
+                   "&nbsp; Υπογραφή: ______________</div></div>")
+    out.append(f"<p class='small'>{APP_NAME} v{APP_VERSION} · {datetime.datetime.now():%d/%m/%Y %H:%M}</p>"
+               "</body></html>")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(tr_html("\n".join(out)))
+
+
+def _sheet_row(s, d, clashes):
+    esc = html.escape
+    try:
+        end = start_end(s)[1].strftime(TIME_FMT)
+    except ValueError:
+        end = "?"
+    status = d.get("status", "")
+    cls = {"ΣΦΑΛΜΑ": "err", "ΠΡΟΣΟΧΗ": "warn"}.get(status.split()[0] if status else "", "")
+    dcp = esc(status or "χωρίς DCP") + (f"<br><span class='warn'>{esc(d['kdm'])}</span>" if d.get("kdm") else "")
+    notes = esc(s.get("notes", "")) + (" <span class='err'>ΣΥΓΚΡΟΥΣΗ ΩΡΑΣ</span>" if clashes else "")
+    fmt = " · ".join(x for x in (d.get("format"), d.get("audio"), d.get("duration")) if x)
+    return (f"<tr><td class='big'>{esc(s['time'])}</td><td>{end}</td><td class='big'>{esc(s['title'])}</td>"
+            f"<td>{esc(fmt)}</td><td>{esc(d.get('subs', ''))}</td><td class='{cls}'>{dcp}</td>"
+            f"<td class='box'>☐</td><td class='box'>☐</td><td class='box'>☐</td><td>{notes}</td></tr>")

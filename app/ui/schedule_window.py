@@ -16,10 +16,11 @@ class ScheduleWindow:
     """
     films(): [(τίτλος, cpl_id, λεπτά)] από τα DCP του κύριου παραθύρου.
     status_of(cpl_id): 'OK' | 'ΠΡΟΣΟΧΗ' | 'ΣΦΑΛΜΑ' | '' (αν δεν είναι φορτωμένο).
+    details_of(cpl_id): {"format", "audio", "subs", "kdm", "duration"} για τα φύλλα προβολής.
     """
 
-    def __init__(self, parent, theme, films, status_of):
-        self.films, self.status_of = films, status_of
+    def __init__(self, parent, theme, films, status_of, details_of=None):
+        self.films, self.status_of, self.details_of = films, status_of, details_of
         self.items = sch.load()
         self.editing = None
         self.win = w = tk.Toplevel(parent)
@@ -39,6 +40,7 @@ class ScheduleWindow:
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(0, 6))
         for text, cmd in (("Διαγραφή", self.delete), ("Εκτύπωση / HTML…", self.export_html),
+                          ("Φύλλα μηχανικού προβολής…", self.export_sheets), ("Ημερολόγιο (.ics)…", self.export_ics),
                           ("Εξαγωγή CSV…", self.export_csv)):
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=(0, 4))
         self.info_var = tk.StringVar()
@@ -173,6 +175,28 @@ class ScheduleWindow:
         if p:
             sch.write_html(self.items, p, self.dcp_status)
             os.startfile(p)
+
+    def export_sheets(self):
+        p = self._ask_save("Φύλλα_προβολής.html", ("HTML", "*.html"))
+        if p:
+            sch.write_day_sheets(self.items, p, self._sheet_details)
+            os.startfile(p)
+
+    def _sheet_details(self, s):
+        d = dict(self.details_of(s["cpl_id"]) or {}) if self.details_of and s.get("cpl_id") else {}
+        d["status"] = self.dcp_status(s)
+        return d
+
+    def export_ics(self):
+        p = self._ask_save("Πρόγραμμα_προβολών.ics", ("Ημερολόγιο", "*.ics"))
+        if p:
+            sch.write_ics(self.items, p, self.dcp_status)
+            messagebox.showinfo(APP_NAME, "Έτοιμο. Το .ics ανοίγει στο Outlook ή εισάγεται στο Google Calendar "
+                                          "(Ρυθμίσεις → Εισαγωγή).", parent=self.win)
+
+    def _ask_save(self, name, ftype):
+        return filedialog.asksaveasfilename(parent=self.win, defaultextension=os.path.splitext(name)[1],
+                                            initialfile=name, filetypes=[ftype])
 
     def export_csv(self):
         p = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv", initialfile="Πρόγραμμα_προβολών.csv",

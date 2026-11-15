@@ -13,6 +13,7 @@ from app.core import prefs
 from app.core.config import APP_DIR, APP_NAME, APP_VERSION, LOG_FILE, PLAYER_ENDED, VIDEO_EXT, get_setting, \
     log, resource, set_setting
 from app.core.dcp import find_dcps, load_dcp
+from app.core.i18n import tr
 from app.core.hashing import verify_cpl
 from app.core.media import probe, thumbnail
 from app.core.notes import load_notes
@@ -23,9 +24,11 @@ from app.tools.playlist import playlist_order
 from app.ui.subtitle_window import SubtitleWindow
 from app.ui.i18n_tk import install as install_translation
 from app.ui.jobs import JobRunner
+from app.ui.notify import Notifier
 from app.ui.spawn import player_command, start_player
 from app.ui.theme import Theme, window_center
 from app.ui.winutil import point_on_screen
+from app.ui.launcher_festival import FestivalMixin
 from app.ui.launcher_tools import ToolsMixin
 from app.ui.launcher_update import UpdateMixin
 from app.ui.widgets import make_tree
@@ -75,7 +78,7 @@ def saved_geometry():
     return g if point_on_screen(x + w // 2, y + 20) else f"{w}x{h}"
 
 
-class LauncherWindow(ToolsMixin, UpdateMixin):
+class LauncherWindow(ToolsMixin, FestivalMixin, UpdateMixin):
     def __init__(self, initial=None, open_linux=False):
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
@@ -108,6 +111,7 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
         self._build_bottom()
         self._build_menu()
         self.jobs = JobRunner(self.root, self._on_progress, self._on_job_done, self._on_busy)
+        self.notifier = Notifier(self.root)
         self.jobs.on("row", self._on_row_event)
         self._bind()
         self.apply_theme()
@@ -118,6 +122,7 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
             self.root.after(150, lambda: self.load(start))
         if not os.environ.get("DCP_LAUNCHER_SHOT") and prefs.get("update_auto"):
             self.root.after(3000, self.update_check)
+        self.root.after(1500, self.restart_watch)  # παρακολούθηση φακέλου, αν είναι ενεργή στις Ρυθμίσεις
         if open_linux:  # ξεκίνησε ως διαχειριστής για δίσκο Linux
             self.root.after(800, self.open_linux_disk)
 
@@ -174,7 +179,6 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
         tools = tk.Menu(menubar, tearoff=0)
         tools.add_command(label="Παραλαβή DCP από δίσκο (αντιγραφή, έλεγχοι, αναφορά)…", command=self.open_ingest)
         tools.add_command(label="Δίσκος Linux (ext2/3/4) που δεν ανοίγει στα Windows…", command=self.open_linux_disk)
-        tools.add_command(label="Πρόγραμμα προβολών…", command=self.open_schedule)
         tools.add_separator()
         tools.add_command(label="Μετατροπή βίντεο (MP4 κ.λπ.) σε DCP…", command=self.open_convert)
         tools.add_command(label="Μετατροπή βίντεο (π.χ. MOV → MP4)…", command=self.open_transcode)
@@ -185,14 +189,28 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
         tools.add_command(label="Σάρωση επιλεγμένων (μαύρο, σιωπή, ήχος, υπότιτλοι)",
                           command=lambda: self.run_scan(self.selected()))
         tools.add_command(label="Σάρωση όλων", command=lambda: self.run_scan(self.all_indices()))
+        tools.add_command(label="Συγχρονισμός ήχου-εικόνας επιλεγμένων (sync test / κλακέτα)",
+                          command=self.sync_selected)
+        tools.add_command(label="Σύγκριση δύο επιλεγμένων DCP (π.χ. παλιά και νέα έκδοση)", command=self.compare_selected)
         tools.add_separator()
         tools.add_command(label="Λίστα προβολής με τα επιλεγμένα", command=self.play_list)
         tools.add_command(label="Αντιγραφή επιλεγμένων σε δίσκο με επαλήθευση…", command=self.copy_selected)
-        tools.add_command(label="Κατάλογος φεστιβάλ (CSV)…", command=self.open_catalog)
         tools.add_command(label="Φόρτωση KDM…", command=self.load_kdm)
         tools.add_separator()
         tools.add_command(label="Έλεγχος για νέα έκδοση / αναβάθμιση", command=lambda: self.update_check(manual=True))
         menubar.add_cascade(label="Εργαλεία", menu=tools)
+        fest = tk.Menu(menubar, tearoff=0)
+        fest.add_command(label="Πρόγραμμα προβολών (ημερολόγιο, φύλλα μηχανικού)…", command=self.open_schedule)
+        fest.add_command(label="Αναφορά PDF για την επιτροπή…", command=self.committee_pdf)
+        fest.add_command(label="Στατιστικά φεστιβάλ", command=self.open_stats)
+        fest.add_command(label="Κατάλογος φεστιβάλ (CSV)…", command=self.open_catalog)
+        fest.add_separator()
+        fest.add_command(label="Επιστροφές DCP…", command=self.open_returns)
+        fest.add_command(label="Προσθήκη επιλεγμένων στις επιστροφές…", command=lambda: self.open_returns(True))
+        fest.add_separator()
+        fest.add_command(label="Ident / intro φεστιβάλ → DCP…", command=self.open_ident)
+        fest.add_command(label="Παρακολούθηση φακέλου για νέα DCP…", command=lambda: self.open_settings("folders"))
+        menubar.add_cascade(label="Φεστιβάλ", menu=fest)
         settings = tk.Menu(menubar, tearoff=0)
         settings.add_command(label="Ρυθμίσεις…", command=self.open_settings)
         settings.add_command(label="Προδιαγραφές φεστιβάλ…", command=lambda: self.open_settings("festival"))
@@ -246,6 +264,16 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
     def _on_job_done(self, name, err):
         self.prog["value"] = 0 if err else 1000
         self.status_var.set(f"{name}: {err or 'ολοκληρώθηκε'}")
+        self.notify_if_away(name, err, self.jobs.last_seconds)
+
+    def notify_if_away(self, name, err, seconds):
+        """Ειδοποίηση των Windows για εργασία που κράτησε πολύ ή όταν το παράθυρο δεν είναι μπροστά."""
+        if not prefs.get("notify_done") or err == "ακυρώθηκε":
+            return
+        away = self.root.state() == "iconic" or self.root.focus_displayof() is None
+        if seconds >= prefs.get("notify_min_seconds") or (away and seconds >= 3):
+            level = "err" if err else "info"
+            self.notifier.notify(tr(name), tr(err) if err else tr("Ολοκληρώθηκε") + f" ({fmt_time(seconds)})", level)
 
     def _on_busy(self, busy):
         self.cancel_btn.state(["!disabled"] if busy else ["disabled"])
@@ -630,6 +658,9 @@ class LauncherWindow(ToolsMixin, UpdateMixin):
                 set_setting("window_zoomed", zoomed)
         except Exception:
             log.exception("Αποθήκευση θέσης παραθύρου")
+        self.notifier.hide()
+        if self.watcher:
+            self.watcher.stop()
         self.root.destroy()
 
     def run(self):

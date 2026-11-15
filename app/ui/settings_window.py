@@ -37,7 +37,9 @@ NUMBERS = (  # (κλειδί, ετικέτα, ελάχιστο, μέγιστο)
     ("sub_max_lines", "Υπότιτλος: έως γραμμές:", 1, 6),
     ("lufs_target", "Στόχος έντασης (LUFS):", -40, -5),
     ("lufs_tolerance", "Ανοχή (± LU):", 0.5, 20),
+    ("sync_seconds", "Συγχρονισμός ήχου-εικόνας: ανάλυση πρώτων (δευτ.):", 10, 1200),
 )
+NUMBER_TABS = {"jump_preroll": "playback", "watch_interval": "folders", "notify_min_seconds": "general"}
 EXPORT_KEYS = set(prefs.DEFAULTS) | {"festival_spec", "catalog", "convert_opts", "transcode_opts", "ingest_opts"}
 
 
@@ -102,6 +104,8 @@ class SettingsWindow:
         self._combo(page, "theme", "Θέμα:", THEMES, 1)
         self._check(page, "update_auto", "Έλεγχος για νέα έκδοση μία φορά την ημέρα", 2)
         self._check(page, "open_last_folder", "Άνοιγμα στον τελευταίο φάκελο κατά την εκκίνηση", 3)
+        self._check(page, "notify_done", "Ειδοποίηση των Windows όταν τελειώνει μεγάλη εργασία (αντιγραφή, σάρωση, ...)", 4)
+        self._number(page, "notify_min_seconds", "... που κράτησε τουλάχιστον (δευτ.):", 5, 0, 3600)
 
     def _folders(self, page):
         page.columnconfigure(0, weight=1)
@@ -114,6 +118,19 @@ class SettingsWindow:
                 row=r + 1, column=1, padx=4)
             self.vars[key] = ("folder", var)
             r += 2
+        self._watch_box(page, r)
+
+    def _watch_box(self, page, row):
+        box = ttk.LabelFrame(page, text=" Παρακολούθηση φακέλου για νέα DCP ", padding=10)
+        box.grid(row=row, column=0, columnspan=2, sticky="we", pady=(14, 0))
+        box.columnconfigure(0, weight=1)
+        self._check(box, "watch_enabled", "Όταν έρθει νέο DCP στον φάκελο (κατέβασμα, αντιγραφή), να μπαίνει στη λίστα", 0)
+        var = tk.StringVar(value=prefs.get("watch_folder"))
+        ttk.Entry(box, textvariable=var).grid(row=1, column=0, columnspan=2, sticky="we")
+        ttk.Button(box, text="…", width=3, command=lambda: ask_folder(self.win, None, var)).grid(row=1, column=2, padx=4)
+        self.vars["watch_folder"] = ("folder", var)
+        self._check(box, "watch_check", "και να ελέγχεται αυτόματα (hash + σάρωση), με ειδοποίηση των Windows", 2)
+        self._number(box, "watch_interval", "Έλεγχος κάθε (δευτ.):", 3, 5, 600)
 
     def _playback(self, page):
         from app.player.audio import output_devices
@@ -244,11 +261,9 @@ class SettingsWindow:
                 try:
                     v = float(var.get().replace(",", "."))
                 except ValueError:
-                    raise ValueError((f"«{label.rstrip(':')}» θέλει αριθμό.", "checks" if key != "jump_preroll"
-                                      else "playback"))
+                    raise ValueError((f"«{label.rstrip(':')}» θέλει αριθμό.", NUMBER_TABS.get(key, "checks")))
                 if not lo <= v <= hi:
-                    raise ValueError((f"«{label.rstrip(':')}»: από {lo:g} έως {hi:g}.",
-                                      "checks" if key != "jump_preroll" else "playback"))
+                    raise ValueError((f"«{label.rstrip(':')}»: από {lo:g} έως {hi:g}.", NUMBER_TABS.get(key, "checks")))
                 out[key] = int(v) if isinstance(prefs.DEFAULTS[key], int) else v
         try:
             out["festival_spec"] = self.spec_form.values()

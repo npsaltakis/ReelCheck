@@ -1,6 +1,5 @@
 """Σάρωση όλης της ταινίας: μαύρη εικόνα, σιωπή, κανάλια, clipping, υπότιτλοι."""
 import datetime
-import json
 import math
 import os
 
@@ -8,9 +7,8 @@ from app.checks.loudness import LoudnessMeter, describe as describe_loudness
 from app.core import prefs
 from app.core.avio import fit_channels, frame_at, reel_audio
 from app.core.config import APP_DIR, CH_NAMES, log
-from app.core.util import check_cancel
+from app.core.util import check_cancel, fmt_time, load_json, save_json
 from app.core.subtitles import load_tracks
-from app.core.util import fmt_time
 from app.tools.subcheck import check_entries, summary as subs_summary
 
 
@@ -23,11 +21,7 @@ def _scan_path(cpl):
 
 
 def load_scan(cpl):
-    try:
-        with open(_scan_path(cpl), encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
+    return load_json(_scan_path(cpl))
 
 
 def _runs(flags, step, min_len):
@@ -76,9 +70,7 @@ def scan_cpl(cpl, progress=None, cancel=None):
 
 def _save_scan(cpl, res):
     try:
-        os.makedirs(SCANS_DIR, exist_ok=True)
-        with open(_scan_path(cpl), "w", encoding="utf-8") as f:
-            json.dump(res, f, ensure_ascii=False)
+        save_json(_scan_path(cpl), res)
     except OSError:
         log.exception("Αποθήκευση σάρωσης")
 

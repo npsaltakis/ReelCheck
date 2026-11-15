@@ -5,6 +5,7 @@
 import base64
 import csv
 import hashlib
+import json
 import os
 import re
 import unicodedata
@@ -86,6 +87,24 @@ def read_text(path):
         except UnicodeDecodeError:
             continue
     return raw.decode("utf-8", "replace")
+
+
+def load_json(path, default=None):
+    """Περιεχόμενο αρχείου JSON, ή default αν δεν υπάρχει / είναι χαλασμένο."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def save_json(path, data, indent=None):
+    """Εγγραφή JSON μέσω προσωρινού αρχείου, ώστε μια διακοπή να μην αφήσει μισό αρχείο. Πετά OSError."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=indent)
+    os.replace(tmp, path)
 
 
 def write_excel_csv(path, header, rows):

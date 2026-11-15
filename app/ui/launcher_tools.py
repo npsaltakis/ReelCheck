@@ -8,6 +8,7 @@ import webbrowser
 from tkinter import filedialog, messagebox
 
 from app.checks.scan import scan_cpl
+from app.checks.kdm import kdm_issues
 from app.checks.spec import get_spec
 from app.core import prefs
 from app.core.config import APP_NAME, get_setting, log, set_setting
@@ -123,14 +124,7 @@ class ToolsMixin:
             return
         for i in idx:
             self.tree.selection_add(str(i))
-
-        def work(i, p, cancel):
-            c = self.items[i]["cpl"]
-            self.items[i]["hash"] = verify_cpl(c, lambda d, t, n: p(0.3 * d / max(1, t), f"hash {n[:30]}"), cancel)
-            self.items[i]["scan"] = scan_cpl(c, lambda f, m: p(0.3 + 0.7 * f, m), cancel)
-
-        self.start_job("Έλεγχος νέων DCP", self._per_item_job(idx, "Έλεγχος", work))
-        self.when_idle(lambda: self._report_new(idx))
+        self.check_dcps(idx, "Έλεγχος νέων DCP", self._report_new)
 
     def _report_new(self, idx):
         lines = [f"{item_row(self.items[i])['Κατάσταση']:<8} {self.items[i]['cpl'].title}" for i in idx]
@@ -216,6 +210,8 @@ class ToolsMixin:
         if everything or changed & {"play_half", "play_fullscreen"}:
             self.half.set(1 if prefs.get("play_half") else 0)
             self.fullscreen.set(1 if prefs.get("play_fullscreen") else 0)
+        if everything or changed & {"watch_enabled", "watch_folder", "watch_interval"}:
+            self.restart_watch()
         if "scans_cleared" in changed:
             for it in self.items:
                 it["scan"] = None
@@ -273,7 +269,16 @@ class ToolsMixin:
             it = next((x for x in self.items if x["cpl"].id == cpl_id), None)
             return item_row(it)["Κατάσταση"] if it else ""
 
-        ScheduleWindow(self.root, self.theme, films, dcp_status)
+        def details(cpl_id):
+            it = next((x for x in self.items if x["cpl"].id == cpl_id), None)
+            if not it:
+                return {}
+            r = item_row(it)
+            kdm = "; ".join(t for _lv, t in kdm_issues(it["cpl"]))
+            return {"format": f"{r['Εικόνα']}{' 3D' if r['3D'] == 'ναι' else ''}", "audio": r["Ήχος"],
+                    "subs": r["Υπότιτλοι"], "duration": r["Διάρκεια"], "kdm": kdm}
+
+        ScheduleWindow(self.root, self.theme, films, dcp_status, details)
 
     # ------------------------------------------------------------------ παραλαβή DCP
     def open_ingest(self):

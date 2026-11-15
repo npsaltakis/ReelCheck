@@ -1,6 +1,7 @@
 """Εργασίες στο παρασκήνιο (thread) με πρόοδο και ακύρωση, για παράθυρα tkinter."""
 import queue
 import threading
+import time
 
 from app.core.config import log
 from app.core.util import Cancelled
@@ -20,6 +21,8 @@ class JobRunner:
         self.cancel_event = None
         self.interval = interval
         self.handlers = {}
+        self.started_at = None
+        self.last_seconds = 0.0  # διάρκεια της εργασίας που μόλις τελείωσε
 
     @property
     def busy(self):
@@ -30,6 +33,7 @@ class JobRunner:
         if self.busy:
             return False
         self.name, self.cancel_event = name, threading.Event()
+        self.started_at = time.monotonic()
         self._busy_changed()
         threading.Thread(target=self._run, args=(name, fn, self.cancel_event), daemon=True, name=name).start()
         return True
@@ -70,6 +74,7 @@ class JobRunner:
                     self.on_progress(*args)
                 elif kind == "done":
                     self.name, self.cancel_event = None, None
+                    self.last_seconds = time.monotonic() - (self.started_at or time.monotonic())
                     self._busy_changed()
                     self.on_done(*args)
                 elif kind == "call":

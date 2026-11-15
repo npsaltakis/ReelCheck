@@ -88,7 +88,6 @@ class AudioOut:
         except Exception:
             if device is None:
                 raise
-            from app.core.config import log
             log.exception("Η συσκευή ήχου %s δεν άνοιξε, χρήση της προεπιλεγμένης", device)
             self.stream = sd.OutputStream(samplerate=sr, channels=2, dtype="float32",
                                           callback=self._cb, latency="high")
