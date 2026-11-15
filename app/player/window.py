@@ -15,7 +15,8 @@ import queue
 import sys
 import time
 
-from app.core.config import APP_NAME, SHOTS_DIR, log, resource
+from app.core import prefs
+from app.core.config import APP_NAME, log, resource
 from app.core.i18n import tr
 from app.core.dcp import load_target
 from app.core.media import probe
@@ -91,13 +92,13 @@ class PlayerWindow:
         self._init_display(fullscreen, center)
         self.tracks = subtitle_tracks(cpl)
         self.track_i = 0 if self.tracks else -1
-        self.show_subs = bool(self.tracks)
+        self.show_subs = bool(self.tracks) and prefs.get("subs_on")
         self.subs = SubtitleRenderer(pygame)
         self.audios = audio_tracks(cpl)
         self.audio_i = 0
         self.notes = load_notes(cpl)
         self.stereo = any(r.stereo for r in cpl.reels)
-        self.muted, self.eye, self.solo, self.meters = False, 0, None, "auto"
+        self.muted, self.eye, self.solo, self.meters = False, 0, None, prefs.get("meters")
         self.toast = ("", 0.0)
         self.current = self.pending = None
         self.video_done = False
@@ -462,9 +463,10 @@ class PlayerWindow:
     def save_screenshot(self, pic):
         self.want_shot = False
         try:
-            os.makedirs(SHOTS_DIR, exist_ok=True)
+            shots = prefs.shots_dir()
+            os.makedirs(shots, exist_ok=True)
             safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in self.cpl.title)[:60]
-            fn = os.path.join(SHOTS_DIR, f"{safe}_{fmt_time(self.current[0], self.rate).replace(':', '-')}.png")
+            fn = os.path.join(shots, f"{safe}_{fmt_time(self.current[0], self.rate).replace(':', '-')}.png")
             self.pg.image.save(self.screen.subsurface(pic).copy(), fn)
             self.say(f"Screenshot: {fn}")
         except Exception as e:

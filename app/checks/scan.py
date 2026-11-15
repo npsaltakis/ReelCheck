@@ -6,6 +6,7 @@ import os
 from fractions import Fraction
 
 from app.checks.loudness import LoudnessMeter, describe as describe_loudness
+from app.core import prefs
 from app.core.config import APP_DIR, CH_NAMES, log
 from app.core.hashing import Cancelled
 from app.core.subtitles import load_tracks
@@ -94,7 +95,7 @@ def scan_cpl(cpl, progress=None, cancel=None):
                 if mean is not None:
                     flags.append((reel.start + t, mean < 6 and peak < 30))
                 t += step
-    black = _runs(flags, step, 2 * step)
+    black = _runs(flags, step, step)  # το όριο για εύρημα είναι στις Ρυθμίσεις
     res["black"] = black
     res["pic_step"] = step
 
@@ -188,7 +189,7 @@ def scan_cpl(cpl, progress=None, cancel=None):
         res["level_db"] = db(math.sqrt(sum(pw)))
         res["lufs"] = meter.result()
         silent = [(float(i), v < 10 ** (-60 / 20)) for i, v in enumerate(sec_rms)]
-        res["silence"] = _runs(silent, 1.0, 10.0)
+        res["silence"] = _runs(silent, 1.0, 3.0)  # το όριο για εύρημα είναι στις Ρυθμίσεις
         res["audio_seconds"] = len(sec_rms)
 
     # --- υπότιτλοι
@@ -221,8 +222,10 @@ def scan_findings(res):
     """[(err|warn|info, κείμενο)] από το αποτέλεσμα της σάρωσης."""
     out, total = [], res.get("seconds", 0)
     ft = fmt_time
-    mid_black = [(a, b) for a, b in res.get("black", []) if a > 300 and b < total - 600]
-    edge_black = [(a, b) for a, b in res.get("black", []) if (a, b) not in mid_black]
+    head, tail = prefs.get("scan_edge_start") * 60, prefs.get("scan_edge_end") * 60  # τίτλοι αρχής / τέλους
+    black = [(a, b) for a, b in res.get("black", []) if b - a >= prefs.get("scan_black_min")]
+    mid_black = [(a, b) for a, b in black if a > head and b < total - tail]
+    edge_black = [(a, b) for a, b in black if (a, b) not in mid_black]
     for a, b in mid_black[:5]:
         out.append(("warn", f"μαύρη εικόνα {ft(a)}–{ft(b)} ({b - a:.0f} δευτ.)"))
     if len(mid_black) > 5:
@@ -230,7 +233,8 @@ def scan_findings(res):
     if edge_black:
         out.append(("info", "μαύρο στην αρχή/τέλος (τίτλοι;): " + ", ".join(f"{ft(a)}–{ft(b)}" for a, b in edge_black[:3])))
     if "peak_db" in res:
-        mid_sil = [(a, b) for a, b in res.get("silence", []) if b - a >= 10 and a > 300 and b < total - 600]
+        mid_sil = [(a, b) for a, b in res.get("silence", [])
+                   if b - a >= prefs.get("scan_silence_min") and a > head and b < total - tail]
         for a, b in mid_sil[:5]:
             out.append(("warn", f"σιωπή {ft(a)}–{ft(b)} ({b - a:.0f} δευτ.)"))
         if len(mid_sil) > 5:
@@ -246,6 +250,13 @@ def scan_findings(res):
         mx = max(res["peak_db"][:6] or [-99])
         if res.get("lufs"):
             out.append(("info", describe_loudness(res["lufs"]) + f", μέγιστη στάθμη {mx:.1f} dBFS"))
+            integ = res["lufs"].get("integrated")
+            if prefs.get("lufs_check") and integ is not None:  # στόχος έντασης από τις Ρυθμίσεις
+                target, tol = prefs.get("lufs_target"), prefs.get("lufs_tolerance")
+                if integ > target + tol:
+                    out.append(("warn", f"πολύ δυνατή: {integ:.1f} LUFS (στόχος {target:g} ±{tol:g})"))
+                elif integ < target - tol:
+                    out.append(("warn", f"πολύ σιγανή: {integ:.1f} LUFS (στόχος {target:g} ±{tol:g})"))
         else:  # παλιές σαρώσεις, πριν από τη μέτρηση LUFS
             out.append(("info", f"μέγιστη στάθμη {mx:.1f} dBFS, μέση {res.get('level_db', 0):.1f} dBFS (RMS)"))
         if res.get("audio_seconds") and abs(res["audio_seconds"] - total) > 2:

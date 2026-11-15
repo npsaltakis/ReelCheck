@@ -1,5 +1,5 @@
 """Φωτεινό / σκούρο θέμα για τα παράθυρα tkinter."""
-from app.core.config import get_setting, set_setting
+from app.core.config import get_setting
 from app.ui.winutil import dark_title_bar, system_theme
 
 PALETTES = {
@@ -11,7 +11,6 @@ PALETTES = {
                  ok="#5bd17a", warn="#f0a640", err="#ff6b6b"),
 }
 MODES = ["auto", "light", "dark"]
-MODE_LABELS = {"auto": "Θέμα: αυτόματο", "light": "Θέμα: φωτεινό", "dark": "Θέμα: σκούρο"}
 STATUS_TAGS = ("OK", "ΠΡΟΣΟΧΗ", "ΣΦΑΛΜΑ")
 
 
@@ -30,10 +29,6 @@ class Theme:
     @property
     def palette(self):
         return PALETTES[self.effective]
-
-    def cycle(self):
-        self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
-        set_setting("theme", self.mode)
 
     def system_changed(self):
         """True αν άλλαξε το θέμα των Windows (για το «αυτόματο»)."""
@@ -77,6 +72,10 @@ class Theme:
                      bordercolor=p["border"], lightcolor=p["accent"], darkcolor=p["accent"])
         st.configure("Vertical.TScrollbar", background=p["alt"], troughcolor=p["bg"], arrowcolor=p["fg"])
         st.configure("TPanedwindow", background=p["bg"])
+        st.configure("TNotebook", background=p["bg"], bordercolor=p["border"])
+        st.configure("TNotebook.Tab", background=p["alt"], foreground=p["fg"], padding=(12, 4))
+        st.map("TNotebook.Tab", background=[("selected", p["field"])], foreground=[("selected", p["fg"])])
+        st.configure("TScale", background=p["bg"])
         dark_title_bar(self.root, self.effective == "dark")
 
     def style_text(self, widget):

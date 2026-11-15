@@ -13,6 +13,7 @@ from app.checks.dcnc import cpl_standard, dcnc_summary
 from app.checks.issues import item_issues
 from app.checks.scan import load_scan, scan_cpl
 from app.checks.spec import get_spec
+from app.core import prefs
 from app.core.config import APP_DIR, APP_NAME, APP_VERSION, LOG_FILE, PLAYER_ENDED, VIDEO_EXT, get_setting, \
     log, resource, set_setting
 from app.core.dcp import find_dcps, load_dcp
@@ -32,15 +33,16 @@ from app.tools.transcode import gpu_name, output_path, transcode_dcp, transcode_
 from app.tools.update import can_self_update, check_update, download_update, install_update
 from app.ui.convert_window import ConvertWindow
 from app.ui.ingest_window import IngestWindow
+from app.ui.settings_window import SettingsWindow
 from app.ui.linux_disk_window import LinuxDiskWindow
 from app.ui.schedule_window import ScheduleWindow
 from app.ui.subtitle_window import SubtitleWindow
 from app.ui.transcode_window import TranscodeWindow, dcp_item
-from app.ui.dialogs import CatalogWindow, LanguageDialog, SpecDialog
+from app.ui.dialogs import CatalogWindow
 from app.ui.i18n_tk import install as install_translation
 from app.ui.jobs import JobRunner
 from app.ui.spawn import player_command, relaunch, relaunch_as_admin, start_player
-from app.ui.theme import MODE_LABELS, Theme, window_center
+from app.ui.theme import Theme, window_center
 from app.ui.winutil import point_on_screen
 
 COLUMNS = ("Κατάσταση", "Τίτλος", "Διάρκεια", "Εικόνα", "Ήχος", "Υπότιτλοι", "Αρχεία", "Hash", "Σημειώσεις")
@@ -49,7 +51,6 @@ LAST_FOLDER_FILE = os.path.join(APP_DIR, "last_folder.txt")
 ISSUE_ICON = {"err": "✖", "warn": "⚠", "info": "ℹ"}
 DEFAULT_GEOMETRY = "1150x680"
 TIME_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})(?::\d{2})?")
-JUMP_PREROLL = 3  # δευτ. πριν από το εύρημα, για να φαίνεται τι προηγείται
 GEOMETRY_RE = re.compile(r"(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)")
 
 
@@ -131,8 +132,8 @@ class LauncherWindow:
         self.theme = Theme(self.root, self.style)
         if os.environ.get("DCP_THEME") in ("light", "dark"):  # για δοκιμές / screenshots
             self.theme.mode = os.environ["DCP_THEME"]
-        self.half = tk.IntVar(value=0)
-        self.fullscreen = tk.IntVar(value=0)
+        self.half = tk.IntVar(value=1 if prefs.get("play_half") else 0)
+        self.fullscreen = tk.IntVar(value=1 if prefs.get("play_fullscreen") else 0)
         self.path_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Έτοιμο")
         self._build_top()
@@ -146,10 +147,10 @@ class LauncherWindow:
         self.apply_theme()
         self._follow_system()
         self.root.after(100, self.jobs.poll)
-        start = initial or last_folder()
+        start = initial or (last_folder() if prefs.get("open_last_folder") else None)
         if start and os.path.isdir(start):
             self.root.after(150, lambda: self.load(start))
-        if not os.environ.get("DCP_LAUNCHER_SHOT"):
+        if not os.environ.get("DCP_LAUNCHER_SHOT") and prefs.get("update_auto"):
             self.root.after(3000, self.update_check)
         if open_linux:  # ξεκίνησε ως διαχειριστής για δίσκο Linux
             self.root.after(800, self.open_linux_disk)
@@ -166,8 +167,6 @@ class LauncherWindow:
         self.entry = ttk.Entry(top, textvariable=self.path_var)
         self.entry.pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(top, text="Φόρτωση", command=self.load_typed).pack(side="left")
-        self.theme_btn = ttk.Button(top, width=15, command=self.cycle_theme)
-        self.theme_btn.pack(side="left", padx=(8, 0))
 
     def _build_table(self):
         mid = ttk.PanedWindow(self.root, orient="vertical")
@@ -223,7 +222,6 @@ class LauncherWindow:
         tools.add_command(label="Έλεγχος υποτίτλων .srt (και διόρθωση χρόνων)…",
                           command=lambda: SubtitleWindow(self.root, self.theme))
         tools.add_separator()
-        tools.add_command(label="Προδιαγραφές φεστιβάλ…", command=self.edit_spec)
         tools.add_command(label="Σάρωση επιλεγμένων (μαύρο, σιωπή, ήχος, υπότιτλοι)",
                           command=lambda: self.run_scan(self.selected()))
         tools.add_command(label="Σάρωση όλων", command=lambda: self.run_scan(self.all_indices()))
@@ -234,8 +232,13 @@ class LauncherWindow:
         tools.add_command(label="Φόρτωση KDM…", command=self.load_kdm)
         tools.add_separator()
         tools.add_command(label="Έλεγχος για νέα έκδοση / αναβάθμιση", command=lambda: self.update_check(manual=True))
-        tools.add_command(label="Γλώσσα / Language…", command=self.choose_language)
         menubar.add_cascade(label="Εργαλεία", menu=tools)
+        settings = tk.Menu(menubar, tearoff=0)
+        settings.add_command(label="Ρυθμίσεις…", command=self.open_settings)
+        settings.add_command(label="Προδιαγραφές φεστιβάλ…", command=lambda: self.open_settings("festival"))
+        settings.add_command(label="Φάκελοι…", command=lambda: self.open_settings("folders"))
+        settings.add_command(label="Αναπαραγωγή (συσκευή ήχου κ.λπ.)…", command=lambda: self.open_settings("playback"))
+        menubar.add_cascade(label="Ρυθμίσεις", menu=settings)
         self.root.config(menu=menubar)
 
     def _bind(self):
@@ -253,11 +256,6 @@ class LauncherWindow:
         self.theme.style_text(self.info)
         self.info.tag_configure("jump", foreground=self.theme.palette["accent"], underline=True)
         self.theme.tag_tree(self.tree)
-        self.theme_btn.configure(text=MODE_LABELS[self.theme.mode])
-
-    def cycle_theme(self):
-        self.theme.cycle()
-        self.apply_theme()
 
     def _follow_system(self):  # στο «αυτόματο» ακολουθεί αλλαγές των Windows
         if self.theme.system_changed():
@@ -423,7 +421,7 @@ class LauncherWindow:
         if not m or not sel:
             return
         h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        start = max(0, h * 3600 + mi * 60 + s - JUMP_PREROLL)
+        start = max(0, h * 3600 + mi * 60 + s - prefs.get("jump_preroll"))
         log.info("Αναπαραγωγή από εύρημα: %s", self.info.get(*rng))
         self.spawn_player(self.items[sel[0]]["cpl"].path, sel[0], extra_args=["--start", str(start)])
 
@@ -792,16 +790,33 @@ class LauncherWindow:
         elif not folder:
             self.info_box(msg)
 
-    # ------------------------------------------------------------------ γλώσσα
-    def choose_language(self):
-        def changed(lang):
-            set_setting("language", lang)
-            if messagebox.askyesno(APP_NAME, "Η γλώσσα αλλάζει στην επόμενη εκκίνηση. Να ξεκινήσει ξανά το ReelCheck τώρα;\n\n"
-                                             "The language changes on the next start. Restart ReelCheck now?",
+    # ------------------------------------------------------------------ ρυθμίσεις
+    def open_settings(self, tab="general"):
+        SettingsWindow(self.root, self.theme, self._settings_saved, tab)
+
+    def _settings_saved(self, changed):
+        """Εφαρμογή των αλλαγών αμέσως, όπου γίνεται· η γλώσσα θέλει επανεκκίνηση."""
+        log.info("Ρυθμίσεις: άλλαξαν %s", sorted(changed))
+        everything = "imported" in changed
+        if everything or "theme" in changed:
+            self.theme.mode = prefs.get("theme")
+            self.apply_theme()
+        if everything or changed & {"play_half", "play_fullscreen"}:
+            self.half.set(1 if prefs.get("play_half") else 0)
+            self.fullscreen.set(1 if prefs.get("play_fullscreen") else 0)
+        if "scans_cleared" in changed:
+            for it in self.items:
+                it["scan"] = None
+        rescore = {"festival_spec", "scans_cleared", "lufs_check", "lufs_target", "lufs_tolerance"}
+        if everything or changed & rescore or any(k.startswith(("scan_", "sub_")) for k in changed):
+            self.spec = get_spec()
+            self.refresh_all()
+        if everything or "language" in changed:
+            if messagebox.askyesno(APP_NAME, "Η γλώσσα αλλάζει στην επόμενη εκκίνηση. Να ξεκινήσει ξανά το ReelCheck "
+                                             "τώρα;\n\nThe language changes on the next start. Restart ReelCheck now?",
                                    parent=self.root):
                 if relaunch(self.path_var.get() or None):
                     self.close()
-        LanguageDialog(self.root, self.theme, get_setting("language", "el"), changed)
 
     # ------------------------------------------------------------------ δίσκος Linux
     def open_linux_disk(self):
@@ -918,12 +933,6 @@ class LauncherWindow:
         lines.append(f"\nΑναφορά: {rep}\n\nΆνοιγμα της αναφοράς;")
         if messagebox.askyesno(APP_NAME, "\n".join(lines), parent=self.root):
             os.startfile(rep)
-
-    def edit_spec(self):
-        def saved(spec):
-            self.spec = spec
-            self.refresh_all()
-        SpecDialog(self.root, self.theme, self.spec, saved)
 
     def copy_selected(self):
         sel = self.selected_cpls()

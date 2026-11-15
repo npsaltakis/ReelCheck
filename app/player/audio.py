@@ -34,17 +34,44 @@ def put(q, item, stop):
     return False
 
 
+def output_devices():
+    """Ονόματα συσκευών εξόδου ήχου, π.χ. «Speakers (Realtek) [Windows WASAPI]»."""
+    try:
+        import sounddevice as sd
+        apis = sd.query_hostapis()
+        return [f"{d['name']} [{apis[d['hostapi']]['name']}]" for d in sd.query_devices() if d["max_output_channels"] > 0]
+    except Exception:
+        return []
+
+
+def device_index(label):
+    """Δείκτης συσκευής από το όνομα των Ρυθμίσεων· None αν είναι κενό ή δεν υπάρχει πια (π.χ. αποσυνδέθηκε)."""
+    if not label:
+        return None
+    try:
+        import sounddevice as sd
+        apis = sd.query_hostapis()
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_output_channels"] > 0 and f"{d['name']} [{apis[d['hostapi']]['name']}]" == label:
+                return i
+    except Exception:
+        pass
+    return None
+
+
 class AudioOut:
     """
     Ήχος μέσω sounddevice. Στην ουρά μπαίνουν πολυκάναλα κομμάτια (n, ch) και η μίξη
     γίνεται εδώ (όλα / solo καναλιού). Το ρολόι βγαίνει από τα δείγματα που παίχτηκαν.
     """
 
-    def __init__(self, sr, nch):
+    def __init__(self, sr, nch, device=None, volume=1.0):
+        """device: δείκτης συσκευής του sounddevice (None = προεπιλογή των Windows). volume: 0..1."""
         import numpy as np
         import sounddevice as sd
         self.np = np
         self.sr, self.nch = sr, nch
+        self.volume = max(0.0, min(1.0, float(volume)))
         self.q = queue.Queue(maxsize=200)
         self.buf = None
         self.pos = 0
@@ -54,8 +81,16 @@ class AudioOut:
         self.muted = False
         self.solo = None             # None = όλα, αλλιώς δείκτης καναλιού
         self.peaks = np.zeros(nch, np.float32)
-        self.stream = sd.OutputStream(samplerate=sr, channels=2, dtype="float32",
-                                      callback=self._cb, latency="high")
+        try:
+            self.stream = sd.OutputStream(samplerate=sr, channels=2, dtype="float32", device=device,
+                                          callback=self._cb, latency="high")
+        except Exception:
+            if device is None:
+                raise
+            from app.core.config import log
+            log.exception("Η συσκευή ήχου %s δεν άνοιξε, χρήση της προεπιλεγμένης", device)
+            self.stream = sd.OutputStream(samplerate=sr, channels=2, dtype="float32",
+                                          callback=self._cb, latency="high")
         self.latency = self.stream.latency
         self.stream.start()
 
@@ -90,6 +125,8 @@ class AudioOut:
             out[:, 1] = block[:, self.solo]
         else:
             out[:] = downmix(block)
+        if self.volume < 0.999 and not self.muted:
+            out *= self.volume
         self.played += filled
 
     def take_peaks(self):

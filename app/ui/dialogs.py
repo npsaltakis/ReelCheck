@@ -1,30 +1,23 @@
-"""Διάλογοι του παραθύρου επιλογής: προδιαγραφές φεστιβάλ, κατάλογος φεστιβάλ."""
+"""Φόρμες και διάλογοι: προδιαγραφές φεστιβάλ, κατάλογος φεστιβάλ."""
 import csv
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
-from app.checks.spec import AUDIO_CHOICES, set_spec
+from app.checks.spec import AUDIO_CHOICES
 from app.ui.i18n_tk import label_key
-from app.core.config import APP_NAME
 
 
 def _num_list(text):
     return [float(x) for x in text.replace(";", ",").split(",") if x.strip()]
 
 
-class SpecDialog:
-    """Επεξεργασία των προδιαγραφών φεστιβάλ. on_save(spec) καλείται μετά την αποθήκευση."""
+class SpecForm:
+    """Φόρμα προδιαγραφών φεστιβάλ μέσα σε ένα frame (καρτέλα «Φεστιβάλ» των Ρυθμίσεων)."""
 
-    def __init__(self, parent, theme, spec, on_save):
-        self.spec, self.on_save = dict(spec), on_save
-        self.win = w = tk.Toplevel(parent)
-        w.title("Προδιαγραφές φεστιβάλ")
-        theme.toplevel(w, parent)
-        self.frame = ttk.Frame(w, padding=14)
-        self.frame.pack(fill="both", expand=True)
+    def __init__(self, frame, spec):
+        self.frame, self.spec = frame, dict(spec)
         self._build()
-        w.grab_set()
 
     def _row(self, r, label):
         ttk.Label(self.frame, text=label).grid(row=r, column=0, sticky="w")
@@ -64,54 +57,19 @@ class SpecDialog:
                                                                    pady=(6, 0))
         for r in range(8):
             f.grid_rowconfigure(r, pad=6)
-        bf = ttk.Frame(f)
-        bf.grid(row=8, column=0, columnspan=4, sticky="e", pady=(12, 0))
-        ttk.Button(bf, text="Άκυρο", command=self.win.destroy).pack(side="right")
-        ttk.Button(bf, text="Αποθήκευση", command=self._save).pack(side="right", padx=6)
 
-    def _save(self):
+    def values(self):
+        """Οι προδιαγραφές της φόρμας· ValueError αν fps ή διάρκεια δεν είναι αριθμοί."""
         try:
             fps = _num_list(self.fps.get())
             mx = float(self.max_min.get().replace(",", ".") or 0)
         except ValueError:
-            messagebox.showerror(APP_NAME, "Τα fps και η διάρκεια θέλουν αριθμούς.", parent=self.win)
-            return
-        spec = {"enabled": bool(self.enabled.get()), "res": [k for k, v in self.res.items() if v.get()],
+            raise ValueError("Τα fps και η διάρκεια θέλουν αριθμούς.")
+        return {"enabled": bool(self.enabled.get()), "res": [k for k, v in self.res.items() if v.get()],
                 "std": [k for k, v in self.std.items() if v.get()], "fps": fps,
                 "audio": label_key(self.audio, AUDIO_CHOICES),
                 "sub_lang": self.sub_lang.get().strip().upper(), "max_minutes": mx,
                 "no_encrypted": bool(self.no_enc.get()), "no_3d": bool(self.no_3d.get())}
-        set_spec(spec)
-        self.win.destroy()
-        self.on_save(spec)
-
-
-class LanguageDialog:
-    """Επιλογή γλώσσας (αυτόματα / ελληνικά / αγγλικά). on_change(lang) καλείται αν άλλαξε."""
-
-    def __init__(self, parent, theme, current, on_change):
-        from app.core.i18n import LANGS
-        self.win = w = tk.Toplevel(parent)
-        w.title("Γλώσσα / Language")
-        theme.toplevel(w, parent)
-        f = ttk.Frame(w, padding=16)
-        f.pack(fill="both", expand=True)
-        self.var = tk.StringVar(value=current)
-        for key, text in LANGS.items():
-            ttk.Radiobutton(f, text=text if key != "en" else "English", value=key, variable=self.var).pack(
-                anchor="w", pady=2)
-
-        def ok():
-            lang = self.var.get()
-            w.destroy()
-            if lang != current:
-                on_change(lang)
-
-        bf = ttk.Frame(f)
-        bf.pack(fill="x", pady=(12, 0))
-        ttk.Button(bf, text="OK", command=ok).pack(side="right")
-        ttk.Button(bf, text="Άκυρο", command=w.destroy).pack(side="right", padx=6)
-        w.grab_set()
 
 
 def write_table_csv(path, header, rows):

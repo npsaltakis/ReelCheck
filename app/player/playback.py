@@ -6,7 +6,8 @@ from fractions import Fraction
 
 from app.core.config import log
 from app.core.util import fmt_time
-from app.player.audio import AudioOut, END, put
+from app.core import prefs
+from app.player.audio import AudioOut, END, device_index, put
 
 
 INTRA_CODECS = {"jpeg2000", "prores", "dnxhd", "mjpeg", "ffv1", "huffyuv", "cfhd", "rawvideo", "v210", "png", "tiff"}
@@ -72,7 +73,8 @@ class Playback:
                     with av.open(r.snd) as c:
                         a = c.streams.audio[0].codec_context
                         sr, nch = a.sample_rate or 48000, max(1, min(16, a.channels or 2))
-                self.audio = AudioOut(sr, nch)
+                self.audio = AudioOut(sr, nch, device_index(prefs.get("audio_device")),
+                                      prefs.get("start_volume") / 100)
             except Exception:
                 log.exception("Δεν άνοιξε η έξοδος ήχου, συνέχεια χωρίς ήχο")
                 self.audio = None

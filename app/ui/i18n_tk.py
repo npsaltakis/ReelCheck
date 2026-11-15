@@ -53,6 +53,11 @@ def install():
     item = ttk.Treeview.item
     ttk.Treeview.item = lambda self, it, option=None, **kw: item(self, it, option, **_tr_options(kw, "treeview"))
 
+    nb_add = ttk.Notebook.add
+    ttk.Notebook.add = lambda self, child, **kw: nb_add(self, child, **_tr_options(kw))
+    nb_tab = ttk.Notebook.tab
+    ttk.Notebook.tab = lambda self, tab_id, option=None, **kw: nb_tab(self, tab_id, option, **_tr_options(kw))
+
     menu_add = tk.Menu.add
     tk.Menu.add = lambda self, itemType, cnf={}, **kw: menu_add(self, itemType, _tr_options(cnf), **_tr_options(kw))
 

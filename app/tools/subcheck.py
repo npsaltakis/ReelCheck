@@ -5,12 +5,14 @@
 """
 from app.core.util import fmt_time
 
-# όρια (συνήθεις κανόνες για υπότιτλους κινηματογράφου / φεστιβάλ)
-MIN_SECONDS = 0.7
-MAX_SECONDS = 7.0
-MAX_CPS = 21          # χαρακτήρες ανά δευτερόλεπτο
-MAX_LINE = 42         # χαρακτήρες ανά γραμμή
-MAX_LINES = 2
+from app.core import prefs
+
+
+def limits():
+    """Όρια από τις Ρυθμίσεις (προεπιλογές: συνήθεις κανόνες για υπότιτλους κινηματογράφου / φεστιβάλ)."""
+    return {"min": prefs.get("sub_min_seconds"), "max": prefs.get("sub_max_seconds"), "cps": prefs.get("sub_max_cps"),
+            "line": prefs.get("sub_max_line"), "lines": prefs.get("sub_max_lines")}
+
 FPS_CHOICES = (23.976, 24, 25, 29.97, 30)
 
 
@@ -22,6 +24,7 @@ def entry_text(entry):
 def check_entries(entries, duration=None):
     """[(αριθμός, επίπεδο 'warn'|'info', χρόνος, κείμενο προβλήματος)] για κάθε υπότιτλο με πρόβλημα."""
     out = []
+    lim = limits()
     ordered = sorted(enumerate(entries, 1), key=lambda x: x[1][0])
     for k, (n, (a, b, items)) in enumerate(ordered):
         lines = entry_text((a, b, items))
@@ -36,18 +39,18 @@ def check_entries(entries, duration=None):
             out.append((n, "warn", a, f"επικαλύπτεται με τον #{ordered[k + 1][0]}"))
         if duration and b > duration + 0.5:
             out.append((n, "warn", a, "μετά το τέλος της ταινίας"))
-        if dur < MIN_SECONDS:
+        if dur < lim["min"]:
             out.append((n, "warn", a, f"πολύ σύντομος ({dur:.2f} δευτ.)"))
-        elif dur > MAX_SECONDS:
+        elif dur > lim["max"]:
             out.append((n, "info", a, f"πολύ μεγάλος ({dur:.1f} δευτ.)"))
         chars = sum(len(t) for t in lines)
-        if lines and chars / dur > MAX_CPS:
-            out.append((n, "warn", a, f"γρήγορος: {chars / dur:.0f} χαρακτήρες/δευτ. (όριο {MAX_CPS})"))
-        if len(lines) > MAX_LINES:
-            out.append((n, "info", a, f"{len(lines)} γραμμές (συνήθως έως {MAX_LINES})"))
-        long_lines = [t for t in lines if len(t) > MAX_LINE]
+        if lines and chars / dur > lim["cps"]:
+            out.append((n, "warn", a, f"γρήγορος: {chars / dur:.0f} χαρακτήρες/δευτ. (όριο {lim['cps']})"))
+        if len(lines) > lim["lines"]:
+            out.append((n, "info", a, f"{len(lines)} γραμμές (συνήθως έως {lim['lines']})"))
+        long_lines = [t for t in lines if len(t) > lim["line"]]
         if long_lines:
-            out.append((n, "info", a, f"γραμμή {max(len(t) for t in long_lines)} χαρακτήρων (όριο {MAX_LINE})"))
+            out.append((n, "info", a, f"γραμμή {max(len(t) for t in long_lines)} χαρακτήρων (όριο {lim['line']})"))
     return out
 
 

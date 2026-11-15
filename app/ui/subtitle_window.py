@@ -105,8 +105,8 @@ class SubtitleWindow:
         self.summary_var.set(
             f"{len(self.entries)} υπότιτλοι, {fmt_time(self.entries[0][0])} – {fmt_time(self.entries[-1][1])}{dur}"
             f" · {warn} προβλήματα" + (f": {subcheck.summary(problems)}" if warn else " ✓") + changed +
-            f"\nΚανόνες: {subcheck.MIN_SECONDS}–{subcheck.MAX_SECONDS} δευτ., έως {subcheck.MAX_CPS} χαρακτήρες/δευτ., "
-            f"έως {subcheck.MAX_LINES} γραμμές των {subcheck.MAX_LINE} χαρακτήρων.")
+            "\nΚανόνες: {min:g}–{max:g} δευτ., έως {cps} χαρακτήρες/δευτ., έως {lines} γραμμές των {line} χαρακτήρων "
+            "(αλλάζουν στις Ρυθμίσεις).".format(**subcheck.limits()))
 
     # ------------------------------------------------------------------ διορθώσεις
     def shift(self):
