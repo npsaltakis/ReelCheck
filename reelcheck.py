@@ -326,6 +326,9 @@ def launcher(initial=None):
         for k in ("pic_err", "snd_err"):
             if inf.get(k):
                 lines.append(f"Πρόβλημα:    {inf[k]}")
+        if c.external:
+            lines.append(f"\nVF: {len(c.external)} αρχεία από άλλο DCP (OV):")
+            lines += [f"  - {os.path.basename(d)}" for d in sorted(set(c.external.values()))]
         if c.missing:
             lines.append("\nΛΕΙΠΟΥΝ ΑΡΧΕΙΑ:")
             lines += [f"  - {m}" for m in c.missing]

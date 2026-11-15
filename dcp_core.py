@@ -247,6 +247,7 @@ class CPL:
         self.encrypted = False
         self.missing = []
         self.assets = {}             # id -> αρχείο (ή None αν λείπει)
+        self.external = {}           # id -> φάκελος άλλου DCP (VF που παίρνει assets από OV)
         self.is_file = False         # κανονικό αρχείο βίντεο, όχι DCP
 
     @property
@@ -258,7 +259,34 @@ class CPL:
         return self.reels[0].rate if self.reels else Fraction(24)
 
 
-def parse_cpl(path, amap):
+# Στοιχεία που ζουν μόνο μέσα στο CPL, δεν έχουν αρχείο.
+CPL_ONLY_ASSETS = {"MainMarkers", "CompositionMetadataAsset"}
+
+
+def sibling_assetmap(folder):
+    """ASSETMAP των άλλων DCP δίπλα στον φάκελο (ένα VF παίρνει εικόνα/ήχο από το OV του)."""
+    folder = os.path.normcase(os.path.abspath(folder))
+    parent = os.path.dirname(folder)
+    out = {}
+    try:
+        names = sorted(os.listdir(parent))
+    except OSError:
+        return out
+    for n in names:
+        d = os.path.join(parent, n)
+        if os.path.normcase(d) == folder or not os.path.isdir(d):
+            continue
+        try:
+            if any(f.upper().startswith("ASSETMAP") for f in os.listdir(d)):
+                for aid, f in read_assetmap(d).items():
+                    out.setdefault(aid, f)
+        except OSError:
+            continue
+    return out
+
+
+def parse_cpl(path, amap, others=None):
+    """others: dict ή callable που δίνει dict id -> αρχείο από άλλα DCP (για VF)."""
     root = xml_root(path)
     if root is None or local(root.tag) != "CompositionPlaylist":
         return None
@@ -277,12 +305,19 @@ def parse_cpl(path, amap):
         for a in al:
             n = local(a.tag)
             aid = norm_id(text(a, "Id"))
-            if not aid:
+            if not aid or n in CPL_ONLY_ASSETS:
                 continue
             f = amap.get(aid)
             if not f or not os.path.isfile(f):
-                cpl.missing.append(f"{n}: {f or aid}")
-                f = None
+                if callable(others):
+                    others = others()
+                g = (others or {}).get(aid)
+                if g and os.path.isfile(g):
+                    f = g
+                    cpl.external[aid] = os.path.dirname(g)
+                else:
+                    cpl.missing.append(f"{n}: {f or aid}")
+                    f = None
             cpl.assets[aid] = f
             if text(a, "KeyId"):
                 cpl.encrypted = True
@@ -316,9 +351,16 @@ def load_dcp(folder):
         names = sorted(os.listdir(folder))
     except OSError:
         return cpls
+    cache = []
+
+    def others():  # διαβάζεται μόνο αν λείπει κάτι τοπικά
+        if not cache:
+            cache.append(sibling_assetmap(folder))
+        return cache[0]
+
     for fn in names:
         if fn.lower().endswith(".xml"):
-            c = parse_cpl(os.path.join(folder, fn), amap)
+            c = parse_cpl(os.path.join(folder, fn), amap, others)
             if c:
                 cpls.append(c)
     return cpls
@@ -392,7 +434,8 @@ def video_cpl(path):
 def load_target(path):
     """CPL (.xml) ή αρχείο βίντεο."""
     if path.lower().endswith(".xml"):
-        return parse_cpl(path, read_assetmap(os.path.dirname(os.path.abspath(path))))
+        folder = os.path.dirname(os.path.abspath(path))
+        return parse_cpl(path, read_assetmap(folder), lambda: sibling_assetmap(folder))
     return video_cpl(path)
 
 
@@ -728,6 +771,9 @@ def verify_cpl(cpl, progress=None, cancel=None):
     progress(done_bytes, total_bytes, όνομα αρχείου). Επιστρέφει λίστα αποτελεσμάτων.
     """
     pkl = read_pkls(cpl.folder)
+    for d in set(cpl.external.values()):  # τα assets του OV ελέγχονται με το PKL του OV
+        for k, v in read_pkls(d).items():
+            pkl.setdefault(k, v)
     items = [(cpl.id, cpl.path)] + [(aid, f) for aid, f in cpl.assets.items()]
     results, todo = [], []
     for aid, f in items:
@@ -862,7 +908,7 @@ def item_row(item):
         "Ήχος": f"{info['ch']}ch {info['sr'] // 1000}kHz" if info.get("ch") else "όχι",
         "Υπότιτλοι": subs,
         "Κρυπτογρ.": "ναι" if c.encrypted else "όχι",
-        "Αρχεία": f"λείπουν {len(c.missing)}" if c.missing else "OK",
+        "Αρχεία": f"λείπουν {len(c.missing)}" if c.missing else ("OK (+OV)" if c.external else "OK"),
         "Hash": hash_summary(item.get("hash")),
         "Σημειώσεις": len(item.get("notes") or []),
         "Παρατηρήσεις": "; ".join(why),
