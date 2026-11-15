@@ -3,7 +3,7 @@ import os
 from fractions import Fraction
 
 from app.core.config import log
-from app.core.util import child, find_all, local, norm_id, text, xml_root
+from app.core.util import child, find_all, is_dcp_folder, local, norm_id, text, xml_root
 
 
 # ----------------------------------------------------------------- ASSETMAP / CPL / PKL
@@ -90,15 +90,47 @@ def sibling_assetmap(folder):
         return out
     for n in names:
         d = os.path.join(parent, n)
-        if os.path.normcase(d) == os.path.normcase(folder) or not os.path.isdir(d):
-            continue
-        try:
-            if any(f.upper().startswith("ASSETMAP") for f in os.listdir(d)):
-                for aid, f in read_assetmap(d).items():
-                    out.setdefault(aid, f)
-        except OSError:
-            continue
+        if os.path.normcase(d) != os.path.normcase(folder) and is_dcp_folder(d):
+            for aid, f in read_assetmap(d).items():
+                out.setdefault(aid, f)
     return out
+
+
+def _edit_rate(asset):
+    er = (text(asset, "EditRate", "24 1") or "24 1").split()
+    try:
+        return Fraction(int(er[0]), int(er[1]) if len(er) > 1 else 1)
+    except (ValueError, ZeroDivisionError):
+        return Fraction(24)
+
+
+def _resolve_asset(cpl, aid, kind, amap, others):
+    """Το αρχείο ενός asset: στο ίδιο DCP, αλλιώς σε διπλανό (VF → OV), αλλιώς καταγράφεται ότι λείπει."""
+    f = amap.get(aid)
+    if f and os.path.isfile(f):
+        return f
+    g = (others() if callable(others) else others or {}).get(aid)
+    if g and os.path.isfile(g):
+        cpl.external[aid] = os.path.dirname(g)
+        return g
+    cpl.missing.append(f"{kind}: {f or aid}")
+    return None
+
+
+def _add_to_reel(reel, kind, f, asset):
+    rate = _edit_rate(asset)
+    entry = int(text(asset, "EntryPoint", "0") or 0)
+    intr = int(text(asset, "IntrinsicDuration", "0") or 0)
+    dur = int(text(asset, "Duration", "0") or 0) or max(0, intr - entry)
+    if kind == "MainSubtitle":
+        reel.subs.append(("sub", f, entry, rate))
+    elif kind in ("MainClosedCaption", "ClosedCaption"):
+        reel.subs.append(("cc", f, entry, rate))
+    elif kind == "MainSound":
+        reel.snd, reel.snd_entry, reel.snd_rate, reel.snd_dur = f, entry, rate, dur
+    elif kind in ("MainPicture", "MainStereoscopicPicture"):
+        reel.pic, reel.pic_entry, reel.rate, reel.dur = f, entry, rate, dur
+        reel.stereo = kind == "MainStereoscopicPicture"
 
 
 def parse_cpl(path, amap, others=None):
@@ -119,41 +151,13 @@ def parse_cpl(path, amap, others=None):
             continue
         reel = Reel()
         for a in al:
-            n = local(a.tag)
-            aid = norm_id(text(a, "Id"))
-            if not aid or n in CPL_ONLY_ASSETS:
+            kind, aid = local(a.tag), norm_id(text(a, "Id"))
+            if not aid or kind in CPL_ONLY_ASSETS:
                 continue
-            f = amap.get(aid)
-            if not f or not os.path.isfile(f):
-                if callable(others):
-                    others = others()
-                g = (others or {}).get(aid)
-                if g and os.path.isfile(g):
-                    f = g
-                    cpl.external[aid] = os.path.dirname(g)
-                else:
-                    cpl.missing.append(f"{n}: {f or aid}")
-                    f = None
-            cpl.assets[aid] = f
+            f = cpl.assets[aid] = _resolve_asset(cpl, aid, kind, amap, others)
             if text(a, "KeyId"):
                 cpl.encrypted = True
-            er = (text(a, "EditRate", "24 1") or "24 1").split()
-            try:
-                rate = Fraction(int(er[0]), int(er[1]) if len(er) > 1 else 1)
-            except (ValueError, ZeroDivisionError):
-                rate = Fraction(24)
-            entry = int(text(a, "EntryPoint", "0") or 0)
-            intr = int(text(a, "IntrinsicDuration", "0") or 0)
-            dur = int(text(a, "Duration", "0") or 0) or max(0, intr - entry)
-            if n == "MainSubtitle":
-                reel.subs.append(("sub", f, entry, rate))
-            elif n in ("MainClosedCaption", "ClosedCaption"):
-                reel.subs.append(("cc", f, entry, rate))
-            elif n == "MainSound":
-                reel.snd, reel.snd_entry, reel.snd_rate, reel.snd_dur = f, entry, rate, dur
-            elif n in ("MainPicture", "MainStereoscopicPicture"):
-                reel.pic, reel.pic_entry, reel.rate, reel.dur = f, entry, rate, dur
-                reel.stereo = n == "MainStereoscopicPicture"
+            _add_to_reel(reel, kind, f, a)
         reel.start = t
         t += reel.seconds
         cpl.reels.append(reel)
@@ -186,7 +190,7 @@ def find_dcps(folder):
     """Ο φάκελος μπορεί να είναι το ίδιο το DCP ή να περιέχει DCP σε υποφακέλους."""
     out = []
     for root, dirs, files in os.walk(folder):
-        if any(f.upper().startswith("ASSETMAP") for f in files):
+        if any(f.upper().startswith("ASSETMAP") for f in files):  # (ίδιο κριτήριο με is_dcp_folder)
             out.append(root)
             dirs[:] = []
         dirs.sort()

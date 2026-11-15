@@ -7,6 +7,7 @@ from app.core.config import APP_NAME, VIDEO_EXT
 from app.core.subtitles import parse_srt
 from app.core.util import fmt_time
 from app.tools import subcheck
+from app.ui.widgets import make_tree
 
 COLUMNS = (("n", "#", 45), ("start", "Αρχή", 95), ("end", "Τέλος", 95), ("dur", "Διάρκ.", 55),
            ("text", "Κείμενο", 380), ("problem", "Πρόβλημα", 260))
@@ -45,14 +46,7 @@ class SubtitleWindow:
                   justify="left").pack(fill="x")
         f = ttk.Frame(self.win, padding=(10, 0, 10, 10))
         f.pack(fill="both", expand=True)
-        self.tree = ttk.Treeview(f, columns=[c[0] for c in COLUMNS], show="headings")
-        for key, text, width in COLUMNS:
-            self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor="w", stretch=key in ("text", "problem"))
-        sb = ttk.Scrollbar(f, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
+        self.tree = make_tree(f, COLUMNS, stretch=("text", "problem"), scroll=True)
         self.theme.tag_tree(self.tree, extra=[("warn", "warn"), ("info", "muted")])
 
     # ------------------------------------------------------------------ δεδομένα

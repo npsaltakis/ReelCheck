@@ -2,34 +2,20 @@
 import csv
 import difflib
 import re
-import unicodedata
 
 from app.checks.dcnc import parse_dcnc
+from app.core.util import latin, read_text
 
 
 # ======================================================================== ΚΑΤΑΛΟΓΟΣ ΦΕΣΤΙΒΑΛ
-_GREEK = dict(zip("ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
-                  ["A", "V", "G", "D", "E", "Z", "I", "TH", "I", "K", "L", "M", "N", "X", "O", "P", "R", "S", "T",
-                   "Y", "F", "CH", "PS", "O"]))
-
-
 def norm_title(s):
-    s = unicodedata.normalize("NFD", (s or "").upper())
-    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    s = "".join(_GREEK.get(ch, ch) for ch in s)
-    return re.sub(r"[^A-Z0-9]", "", s)
+    """Τίτλος για σύγκριση: λατινικά κεφαλαία χωρίς κενά/σύμβολα (Το Ταξίδι -> TOTAXIDI)."""
+    return re.sub(r"[^A-Z0-9]", "", latin(s).upper())
 
 
 def read_catalog(path):
     """[{"title", "row"}] από CSV (ή TXT με έναν τίτλο ανά γραμμή)."""
-    with open(path, "rb") as f:
-        raw = f.read()
-    for enc in ("utf-8-sig", "cp1253", "latin-1"):
-        try:
-            txt = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
+    txt = read_text(path)
     lines = [l for l in txt.splitlines() if l.strip() and not l.lower().startswith("sep=")]
     if not lines:
         return []

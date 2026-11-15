@@ -9,8 +9,9 @@ import os
 import shutil
 from fractions import Fraction
 
+from app.core.avio import fit_channels, reel_audio, seek_seconds
 from app.core.config import log
-from app.core.hashing import Cancelled
+from app.core.util import check_cancel
 
 PRESETS = {
     "h264": {"label": "MP4 H.264 (παίζει παντού)", "ext": ".mp4", "format": "mp4", "video": "h264", "audio": "aac"},
@@ -153,11 +154,6 @@ def probe(path):
     return info
 
 
-def _check_cancel(cancel):
-    if cancel is not None and cancel.is_set():
-        raise Cancelled()
-
-
 # ======================================================================== ΥΠΟΤΙΤΛΟΙ ΣΤΗΝ ΕΙΚΟΝΑ
 class SubtitleBurner:
     """Γράφει υπότιτλους πάνω σε καρέ RGB (κείμενο με περίγραμμα, ή εικόνες PNG των DCP)."""
@@ -228,10 +224,10 @@ def remux(src, dst, progress=None, cancel=None):
     import av
     with av.open(src) as ic, av.open(dst, "w") as oc:
         dur = (ic.duration or 0) / 1_000_000
-        streams = [s for s in (ic.streams.video[:1] + ic.streams.audio[:1])]
+        streams = ic.streams.video[:1] + ic.streams.audio[:1]
         out = {s.index: oc.add_stream_from_template(s) for s in streams}
         for pkt in ic.demux(streams):
-            _check_cancel(cancel)
+            check_cancel(cancel)
             if pkt.dts is None:
                 continue
             pkt.stream = out[pkt.stream.index]
@@ -255,7 +251,7 @@ def _audio_setup(oc, preset, channels, mode):
     return st, av.AudioResampler(format=fmt, layout=layout, rate=48000)
 
 
-def _video_graph(in_stream, enc_stream, rotation, w, h, pix_fmt):
+def _video_graph(in_stream, rotation, w, h, pix_fmt):
     import av
     g = av.filter.Graph()
     nodes = [g.add_buffer(template=in_stream)]
@@ -287,6 +283,65 @@ def first_frame_geometry(src):
     raise ValueError("Το αρχείο δεν έχει εικόνα")
 
 
+DEFAULT_FILE_OPTS = {"quality": "normal", "max_h": 0, "gpu": True, "audio": "stereo", "subs": "none", "srt": None,
+                     "remux": True}
+
+
+class _FileEncoder:
+    """Κωδικοποίηση ενός αρχείου: εικόνα από φίλτρα (περιστροφή, κλίμακα, υπότιτλοι) και ήχος με resampler."""
+
+    def __init__(self, oc, vin, ain, preset, opts, channels, src):
+        from app.core.subtitles import parse_srt
+        self.oc = oc
+        self.enc_name, enc_opts, self.pix_fmt = pick_encoder(preset, opts["quality"], opts["gpu"])
+        # διαστάσεις και περιστροφή πριν ξεκινήσει η εγγραφή (ο ήχος μπορεί να έρθει πριν από την εικόνα)
+        fw, fh, rot = first_frame_geometry(src)
+        if abs(round(rot)) % 180 == 90:  # κάθετο βίντεο κινητού: πλάτος και ύψος αλλάζουν θέση
+            fw, fh = fh, fw
+        w, h = target_size(fw, fh, opts["max_h"])
+        entries = parse_srt(opts["srt"]) if opts["subs"] == "burn" and opts.get("srt") else []
+        self.vout = oc.add_stream(self.enc_name, rate=vin.average_rate or vin.guessed_rate or Fraction(25))
+        self.vout.width, self.vout.height, self.vout.pix_fmt = w, h, self.pix_fmt
+        self.vout.codec_context.time_base = vin.time_base
+        self.vout.options = enc_opts
+        self.graph = _video_graph(vin, rot, w, h, "rgb24" if entries else self.pix_fmt)
+        self.burner = SubtitleBurner(entries, w, h) if entries else None
+        self.aout = self.resampler = None
+        if ain is not None:
+            self.aout, self.resampler = _audio_setup(oc, preset, channels, opts["audio"])
+
+    def _mux(self, packets):
+        for p in packets:
+            self.oc.mux(p)
+
+    def _encode_filtered(self):
+        for f in _pull(self.graph):
+            if self.burner is not None:
+                f = self.burner.burn(f, float(f.pts * f.time_base) if f.pts is not None else 0.0)
+                f = f.reformat(format=self.pix_fmt)
+            self._mux(self.vout.encode(f))
+
+    def video(self, frame):
+        self.graph.push(frame)
+        self._encode_filtered()
+
+    def audio(self, frame):
+        if self.aout is None:
+            return
+        frame.pts = None
+        for rf in self.resampler.resample(frame):
+            self._mux(self.aout.encode(rf))
+
+    def finish(self):
+        self.graph.push(None)  # άδειασμα φίλτρων
+        self._encode_filtered()
+        self._mux(self.vout.encode())
+        if self.aout is not None:
+            for rf in self.resampler.resample(None):
+                self._mux(self.aout.encode(rf))
+            self._mux(self.aout.encode())
+
+
 def transcode_file(src, dst, preset="h264", opts=None, progress=None, cancel=None):
     """
     opts: quality ('high'|'normal'|'small'), max_h (0 = ίδια), gpu (bool), audio ('stereo'|'keep'),
@@ -294,9 +349,7 @@ def transcode_file(src, dst, preset="h264", opts=None, progress=None, cancel=Non
     Επιστρέφει dict με το τι έγινε.
     """
     import av
-    from app.core.subtitles import parse_srt
-    opts = dict({"quality": "normal", "max_h": 0, "gpu": True, "audio": "stereo", "subs": "none", "srt": None,
-                 "remux": True}, **(opts or {}))
+    opts = dict(DEFAULT_FILE_OPTS, **(opts or {}))
     info = probe(src)
     if opts["remux"] and can_remux(info, preset, opts):
         remux(src, dst, progress, cancel)
@@ -309,63 +362,23 @@ def transcode_file(src, dst, preset="h264", opts=None, progress=None, cancel=Non
             raise ValueError("Το αρχείο δεν έχει εικόνα")
         vin.thread_type = "AUTO"
         dur = (ic.duration or 0) / 1_000_000
-        enc_name, enc_opts, pix_fmt = pick_encoder(preset, opts["quality"], opts["gpu"])
-        rate = vin.average_rate or vin.guessed_rate or Fraction(25)
-        # διαστάσεις και περιστροφή πριν ξεκινήσει η εγγραφή (ο ήχος μπορεί να έρθει πριν από την εικόνα)
-        fw, fh, rot = first_frame_geometry(src)
-        if abs(round(rot)) % 180 == 90:  # κάθετο βίντεο κινητού: πλάτος και ύψος αλλάζουν θέση
-            fw, fh = fh, fw
-        w, h = target_size(fw, fh, opts["max_h"])
-        entries = parse_srt(opts["srt"]) if opts["subs"] == "burn" and opts.get("srt") else []
         oc = av.open(dst, "w", format=PRESETS[preset]["format"])
         try:
-            vout = oc.add_stream(enc_name, rate=rate)
-            vout.width, vout.height, vout.pix_fmt = w, h, pix_fmt
-            vout.codec_context.time_base = vin.time_base
-            vout.options = enc_opts
-            graph = _video_graph(vin, vout, rot, w, h, "rgb24" if entries else pix_fmt)
-            burner = SubtitleBurner(entries, w, h) if entries else None
-            aout = resampler = None
-            if ain is not None:
-                aout, resampler = _audio_setup(oc, preset, info["channels"], opts["audio"])
+            enc = _FileEncoder(oc, vin, ain, preset, opts, info["channels"], src)
             for pkt in ic.demux(*(s for s in (vin, ain) if s is not None)):
-                _check_cancel(cancel)
+                check_cancel(cancel)
                 for frame in pkt.decode():
-                    if pkt.stream is vin:
-                        graph.push(frame)
-                        for f in _pull(graph):
-                            if burner is not None:
-                                f = burner.burn(f, float(f.pts * f.time_base) if f.pts is not None else 0.0)
-                                f = f.reformat(format=pix_fmt)
-                            for p in vout.encode(f):
-                                oc.mux(p)
-                        if progress and frame.time is not None and dur:
-                            progress(min(1.0, frame.time / dur), f"{enc_name}")
-                    elif aout is not None:
-                        frame.pts = None
-                        for rf in resampler.resample(frame):
-                            for p in aout.encode(rf):
-                                oc.mux(p)
-            graph.push(None)  # άδειασμα φίλτρων
-            for f in _pull(graph):
-                if burner is not None:
-                    f = burner.burn(f, float(f.pts * f.time_base) if f.pts is not None else 0.0)
-                    f = f.reformat(format=pix_fmt)
-                for p in vout.encode(f):
-                    oc.mux(p)
-            for p in vout.encode():
-                oc.mux(p)
-            if aout is not None:
-                for rf in resampler.resample(None):
-                    for p in aout.encode(rf):
-                        oc.mux(p)
-                for p in aout.encode():
-                    oc.mux(p)
+                    if pkt.stream is not vin:
+                        enc.audio(frame)
+                        continue
+                    enc.video(frame)
+                    if progress and frame.time is not None and dur:
+                        progress(min(1.0, frame.time / dur), enc.enc_name)
+            enc.finish()
         finally:
             oc.close()
-    if opts["subs"] == "copy":
-        _copy_srt(opts, dst)
-    return {"mode": "encode", "encoder": enc_name}
+    _copy_srt(opts, dst)
+    return {"mode": "encode", "encoder": enc.enc_name}
 
 
 def _copy_srt(opts, dst):
@@ -374,52 +387,9 @@ def _copy_srt(opts, dst):
 
 
 # ======================================================================== DCP → MP4
-def _dcp_audio(reel, nch_out, cancel):
-    """Γεννήτρια (χρόνος_αρχής_σε_δείγματα, numpy (n, ch) float32) για τον ήχο ενός reel."""
-    import av
-    import numpy as np
-    if not reel.snd:
-        return
-    sr = 48000
-    start_s = float(reel.snd_entry / reel.snd_rate)
-    need = int(round(reel.seconds * sr))
-    with av.open(reel.snd) as c:
-        st = c.streams.audio[0]
-        if start_s > 0:
-            try:
-                c.seek(int(start_s / st.time_base) + (st.start_time or 0), stream=st, backward=True)
-            except Exception:
-                pass
-        a0 = float((st.start_time or 0) * st.time_base) if st.time_base else 0.0
-        start_sample, pos, done = int(round(start_s * sr)), None, 0
-        for fr in c.decode(st):
-            _check_cancel(cancel)
-            if done >= need:
-                break
-            a = fr.to_ndarray()
-            ch = fr.layout.nb_channels if hasattr(fr.layout, "nb_channels") else len(fr.layout.channels)
-            a = a.T if fr.format.is_planar else a.reshape(-1, ch)
-            a = (a.astype(np.float32) / 2147483648.0) if a.dtype == np.int32 else a.astype(np.float32)
-            fs = int(round((fr.time - a0) * sr)) if fr.time is not None else (pos or start_sample)
-            pos = fs + len(a)
-            if pos <= start_sample:
-                continue
-            if fs < start_sample:
-                a = a[start_sample - fs:]
-            a = a[:need - done]
-            done += len(a)
-            yield a
-
-
 def _mix(a, nch_out):
-    import numpy as np
     from app.player.audio import downmix
-    if nch_out == 2:
-        return downmix(a)
-    out = np.zeros((len(a), nch_out), np.float32)
-    k = min(nch_out, a.shape[1])
-    out[:, :k] = a[:, :k]
-    return out
+    return downmix(a) if nch_out == 2 else fit_channels(a, nch_out)
 
 
 class AudioFeeder:
@@ -438,7 +408,7 @@ class AudioFeeder:
         self.source = None
 
     def start_reel(self, reel, cancel):
-        self.source = _dcp_audio(reel, self.nch, cancel) if reel.snd else None
+        self.source = reel_audio(reel, self.RATE, limit=reel.seconds, stop=cancel) if reel.snd else None
 
     @property
     def seconds(self):
@@ -492,12 +462,10 @@ def _dcp_reel_frames(reel, max_h, cancel):
         mult = 2 if reel.stereo else 1
         st0 = vs.start_time or 0
         first, last = reel.pic_entry * mult, (reel.pic_entry + reel.dur) * mult
-        if first:
-            c.seek(int(Fraction(first) / (reel.rate * mult) / vs.time_base) + st0, stream=vs, backward=True)
+        seek_seconds(c, vs, Fraction(first) / (reel.rate * mult))
         counter = first - 1
         for fr in c.decode(vs):
-            if cancel is not None and cancel.is_set():
-                raise Cancelled()
+            check_cancel(cancel)
             counter += 1
             idx = int(round((fr.pts - st0) * vs.time_base * reel.rate * mult)) if fr.pts is not None else counter
             if idx < first or (mult == 2 and idx % 2):
@@ -505,6 +473,66 @@ def _dcp_reel_frames(reel, max_h, cancel):
             if idx >= last:
                 break
             yield fr
+
+
+class _DcpEncoder:
+    """Κωδικοποίηση καρέ DCP: οι διαστάσεις, οι υπότιτλοι και ο ήχος ρυθμίζονται από το πρώτο καρέ."""
+
+    def __init__(self, oc, preset, opts, entries, has_audio, rate):
+        self.oc, self.preset, self.opts, self.entries, self.has_audio = oc, preset, opts, entries, has_audio
+        self.rate = float(rate)
+        self.enc_name, self.enc_opts, self.pix_fmt = pick_encoder(preset, opts["quality"], opts["gpu"])
+        self.vout = oc.add_stream(self.enc_name, rate=rate)
+        self.vout.codec_context.time_base = Fraction(1) / rate
+        self.feeder = self.burner = None
+        self.frame_no = 0
+
+    @property
+    def seconds(self):
+        return self.frame_no / self.rate
+
+    def start_reel(self, reel, cancel):
+        self.reel, self.cancel = reel, cancel
+        if self.feeder is not None:
+            self.feeder.start_reel(reel, cancel)
+
+    def _setup(self, fr):
+        w, h = target_size(fr.width, fr.height, self.opts["max_h"])
+        self.vout.width, self.vout.height, self.vout.pix_fmt = w, h, self.pix_fmt
+        self.vout.options = self.enc_opts
+        if self.entries:
+            self.burner = SubtitleBurner(self.entries, w, h, fr.width)
+        if self.has_audio:
+            self.feeder = AudioFeeder(self.oc, self.preset, self.opts["audio"])
+            self.feeder.start_reel(self.reel, self.cancel)
+
+    def add(self, fr):
+        if self.frame_no == 0:
+            self._setup(fr)
+        t = self.seconds
+        size = {"width": self.vout.width, "height": self.vout.height}
+        if self.burner is not None:
+            out = self.burner.burn(fr.reformat(format="rgb24", **size), t).reformat(format=self.pix_fmt)
+        else:
+            out = fr.reformat(format=self.pix_fmt, **size)
+        out.pts = self.frame_no
+        self.frame_no += 1
+        for p in self.vout.encode(out):
+            self.oc.mux(p)
+        if self.feeder is not None:
+            self.feeder.fill_until(t + 0.5)
+
+    def end_reel(self):
+        """Τέλος reel: ό,τι έμεινε από τον ήχο, ή σιωπή αν δεν είχε."""
+        if self.feeder is not None:
+            self.feeder.fill_until(self.seconds)
+            self.feeder.silence_until(self.seconds)
+
+    def finish(self):
+        for p in self.vout.encode():
+            self.oc.mux(p)
+        if self.feeder is not None:
+            self.feeder.finish()
 
 
 def transcode_dcp(cpl, dst, preset="h264", opts=None, progress=None, cancel=None):
@@ -517,53 +545,22 @@ def transcode_dcp(cpl, dst, preset="h264", opts=None, progress=None, cancel=None
     opts = dict({"quality": "normal", "max_h": 1080, "gpu": True, "audio": "stereo", "subs": "burn"}, **(opts or {}))
     if cpl.encrypted:
         raise ValueError("Κρυπτογραφημένο DCP: χρειάζεται KDM")
-    enc_name, enc_opts, pix_fmt = pick_encoder(preset, opts["quality"], opts["gpu"])
-    rate, total = cpl.rate, cpl.seconds
     tracks = load_tracks(cpl) if opts["subs"] == "burn" else []
     entries = tracks[0]["entries"] if tracks else []
-    has_audio = any(r.snd for r in cpl.reels)
+    label = f"DCP → {PRESETS[preset]['ext'][1:].upper()}"
     oc = av.open(dst, "w", format=PRESETS[preset]["format"])
     try:
-        vout = oc.add_stream(enc_name, rate=rate)
-        vout.codec_context.time_base = Fraction(1) / rate
-        feeder = burner = None
-        frame_no = 0
+        enc = _DcpEncoder(oc, preset, opts, entries, any(r.snd for r in cpl.reels), cpl.rate)
         for reel in cpl.reels:
             if not reel.pic:
                 continue
-            if feeder is not None:
-                feeder.start_reel(reel, cancel)
+            enc.start_reel(reel, cancel)
             for fr in _dcp_reel_frames(reel, opts["max_h"], cancel):
-                if burner is None and frame_no == 0:  # ρυθμίσεις από το πρώτο καρέ
-                    w, h = target_size(fr.width, fr.height, opts["max_h"])
-                    vout.width, vout.height, vout.pix_fmt = w, h, pix_fmt
-                    vout.options = enc_opts
-                    if entries:
-                        burner = SubtitleBurner(entries, w, h, fr.width)
-                    if has_audio:
-                        feeder = AudioFeeder(oc, preset, opts["audio"])
-                        feeder.start_reel(reel, cancel)
-                t = frame_no / float(rate)
-                if burner is not None:
-                    out = burner.burn(fr.reformat(width=vout.width, height=vout.height, format="rgb24"), t)
-                    out = out.reformat(format=pix_fmt)
-                else:
-                    out = fr.reformat(width=vout.width, height=vout.height, format=pix_fmt)
-                out.pts = frame_no
-                frame_no += 1
-                for p in vout.encode(out):
-                    oc.mux(p)
-                if feeder is not None:
-                    feeder.fill_until(t + 0.5)
-                if progress and total and frame_no % 12 == 0:
-                    progress(min(1.0, t / total), f"DCP → {PRESETS[preset]['ext'][1:].upper()} ({enc_name})")
-            if feeder is not None:  # τέλος reel: ό,τι έμεινε από τον ήχο, ή σιωπή αν δεν είχε
-                feeder.fill_until(frame_no / float(rate))
-                feeder.silence_until(frame_no / float(rate))
-        for p in vout.encode():
-            oc.mux(p)
-        if feeder is not None:
-            feeder.finish()
+                enc.add(fr)
+                if progress and cpl.seconds and enc.frame_no % 12 == 0:
+                    progress(min(1.0, enc.seconds / cpl.seconds), f"{label} ({enc.enc_name})")
+            enc.end_reel()
+        enc.finish()
     finally:
         oc.close()
-    return {"mode": "dcp", "encoder": enc_name}
+    return {"mode": "dcp", "encoder": enc.enc_name}

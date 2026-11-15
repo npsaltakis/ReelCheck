@@ -8,40 +8,17 @@ import shutil
 import time
 
 from app.core.config import log
-from app.core.hashing import Cancelled
+from app.core.util import Cancelled, check_cancel
 from app.tools import dcpomatic
 from app.checks.loudness import measure_file
 from app.core.subtitles import parse_srt
 from app.tools.mediainfo import audio_level, equalize_gains
 from app.tools.subcheck import check_entries, summary
+from app.core.util import latin  # noqa: F401 (και για όσους το παίρνουν από εδώ)
 
 WORK_DIR_NAME = "_ReelCheck_work"  # μόνο λατινικά: το DCP-o-matic δεν γράφει σε διαδρομές με ελληνικά
 DEFAULT_OPTS = {"mode": "single", "name": "Program", "kind": "SHR", "ratio": "185", "standard": "SMPTE",
                 "fps": None, "gap": 2.0, "sub_lang": "", "normalize": True, "reel_per_film": True}
-
-
-_GREEK_LATIN = {"α": "a", "β": "v", "γ": "g", "δ": "d", "ε": "e", "ζ": "z", "η": "i", "θ": "th", "ι": "i",
-                "κ": "k", "λ": "l", "μ": "m", "ν": "n", "ξ": "x", "ο": "o", "π": "p", "ρ": "r", "σ": "s",
-                "ς": "s", "τ": "t", "υ": "y", "φ": "f", "χ": "ch", "ψ": "ps", "ω": "o"}
-
-
-def latin(text):
-    """Ελληνικά σε λατινικούς χαρακτήρες (τα ονόματα DCP δέχονται μόνο λατινικά): Το Ταξίδι -> To Taxidi."""
-    import unicodedata
-    plain = "".join(ch for ch in unicodedata.normalize("NFD", text or "") if unicodedata.category(ch) != "Mn")
-    plain = plain.replace("ΟΥ", "OU").replace("Ου", "Ou").replace("ου", "ou")
-    out = []
-    for ch in plain:
-        low = ch.lower()
-        rep = _GREEK_LATIN.get(low)
-        if rep is None:
-            out.append(ch)
-        elif ch != low:
-            out.append(rep.upper() if plain.isupper() else rep.capitalize())
-        else:
-            out.append(rep)
-    s = "".join(out).encode("ascii", "ignore").decode()
-    return re.sub(r"\s+", " ", s).strip()
 
 
 def film_name(path):
@@ -191,8 +168,7 @@ def _gains(infos, opts, prog, cancel):
 
 
 def _one_dcp(tools, name, entries, opts, work, out_dir, progress, cancel):
-    if cancel is not None and cancel.is_set():
-        raise Cancelled()
+    check_cancel(cancel)
     film_dir = os.path.join(work, f"{re.sub(r'[^A-Za-z0-9]+', '_', name)[:40]}_{int(time.time())}")
     progress(0, "Προετοιμασία project")
     dcpomatic.create_project(tools, film_dir, entries, dict(opts, name=name))

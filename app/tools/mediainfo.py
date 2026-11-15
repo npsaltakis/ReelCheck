@@ -2,7 +2,9 @@
 import math
 import os
 
+from app.core.avio import frame_to_float
 from app.core.config import log
+from app.core.util import check_cancel
 
 SUB_EXT = (".srt",)
 
@@ -53,13 +55,8 @@ def audio_level(path, cancel=None):
             return None, None
         st = c.streams.audio[0]
         for fr in c.decode(st):
-            if cancel is not None and cancel.is_set():
-                from app.core.hashing import Cancelled
-                raise Cancelled()
-            a = fr.to_ndarray()
-            if a.dtype.kind in "iu":
-                a = a.astype(np.float32) / float(np.iinfo(a.dtype).max)
-            a = a.astype(np.float64)
+            check_cancel(cancel)
+            a = frame_to_float(fr).astype(np.float64)
             sumsq += float((a ** 2).sum())
             n += a.size
             peak = max(peak, float(np.abs(a).max()) if a.size else 0.0)

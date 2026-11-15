@@ -6,7 +6,7 @@ from fractions import Fraction
 
 from app.core.config import log
 from app.core.dcp import load_dcp
-from app.core.util import find_all, local, norm_id, text
+from app.core.util import find_all, local, norm_id, read_text, text
 
 
 # ----------------------------------------------------------------- ΥΠΟΤΙΤΛΟΙ
@@ -58,6 +58,109 @@ def _truthy(v):
     return (v or "").lower() in ("yes", "true", "1")
 
 
+def _attr(el, *names, default=None):
+    """Η πρώτη ιδιότητα που υπάρχει (τα DCP γράφουν π.χ. και VAlign και Valign)."""
+    for n in names:
+        if el.get(n) is not None:
+            return el.get(n)
+    return default
+
+
+def _italic_of(el, italic):
+    if local(el.tag) == "Font" and el.get("Italic") is not None:
+        return _truthy(el.get("Italic"))
+    return italic
+
+
+def _text_runs(el, italic, cur):
+    """Κομμάτια κειμένου [(κείμενο, πλάγια)] ενός <Text>, μαζί με τα <Font> και <Space> μέσα του."""
+    italic = _italic_of(el, italic)
+    if el.text:
+        cur.append((el.text, italic))
+    for c in el:
+        if local(c.tag) == "Space":
+            cur.append((" ", italic))
+        else:
+            _text_runs(c, italic, cur)
+        if c.tail:
+            cur.append((c.tail, italic))
+    return cur
+
+
+def _position(el):
+    """(valign, vpos, halign, hpos, y) όπου y = κάθετη θέση 0-100 από πάνω."""
+    valign = _attr(el, "VAlign", "Valign", default="bottom").lower()
+    vpos = float(_attr(el, "VPosition", "Vposition", default="0") or 0)
+    halign = _attr(el, "HAlign", "Halign", default="center").lower()
+    hpos = float(_attr(el, "HPosition", "Hposition", default="0") or 0)
+    y = vpos if valign == "top" else (50 + vpos if valign == "center" else 100 - vpos)
+    return valign, vpos, halign, hpos, y
+
+
+class _DcpSubtitles:
+    """Υπότιτλοι ενός αρχείου DCP (Interop XML ή SMPTE MXF), κείμενο και εικόνες."""
+
+    def __init__(self, path, data, root):
+        self.root, self.folder = root, os.path.dirname(path)
+        if local(root.tag) == "DCSubtitle":  # Interop: ο χρόνος σε ticks των 4 ms
+            self.tick = 250
+        else:
+            r = (text(root, "TimeCodeRate") or text(root, "EditRate") or "24").split()
+            self.tick = Fraction(int(r[0]), int(r[1]) if len(r) > 1 else 1)
+        # εικόνες: Interop = αρχεία PNG δίπλα, SMPTE = μέσα στο MXF (αντιστοίχιση με σειρά εμφάνισης)
+        self.img_ids = []
+        for im in find_all(root, "Image"):
+            k = (im.text or "").strip()
+            if k and k not in self.img_ids:
+                self.img_ids.append(k)
+        self.blobs = _png_blobs(data) if path.lower().endswith(".mxf") and self.img_ids else []
+        self.missing_imgs = 0
+        self.entries = []
+
+    def png_for(self, ref):
+        ref = ref.strip()
+        if self.blobs and ref in self.img_ids and self.img_ids.index(ref) < len(self.blobs):
+            return self.blobs[self.img_ids.index(ref)]
+        for cand in (ref, norm_id(ref) + ".png", ref + ".png"):
+            p = os.path.join(self.folder, cand)
+            if os.path.isfile(p):
+                with open(p, "rb") as f:
+                    return f.read()
+        return None
+
+    def _item(self, el, italic):
+        """Ένα <Text> ή <Image> σε item, ή None (κενό κείμενο / εικόνα που λείπει)."""
+        valign, vpos, halign, hpos, y = _position(el)
+        if local(el.tag) == "Image":
+            png = self.png_for(el.text or "")
+            if png is None:
+                self.missing_imgs += 1
+                return None
+            return {"type": "image", "png": png, "valign": valign, "vpos": vpos, "halign": halign, "hpos": hpos,
+                    "y": y}
+        runs = _text_runs(el, italic, [])
+        line = "".join(t for t, _ in runs).strip()
+        if not line:
+            return None
+        return {"type": "text", "text": line, "y": y, "italic": any(i for t, i in runs if t.strip())}
+
+    def _subtitle(self, el, italic, offset):
+        t_in = _sub_time(el.get("TimeIn", "0:0:0:0"), self.tick)
+        t_out = _sub_time(el.get("TimeOut", "0:0:0:0"), self.tick)
+        items = [self._item(tx, italic) for tx in el.iter() if local(tx.tag) in ("Text", "Image")]
+        items = sorted((i for i in items if i), key=lambda r: r["y"])
+        if items:
+            self.entries.append((offset + t_in, offset + t_out, items))
+
+    def visit(self, el, italic, offset):
+        italic = _italic_of(el, italic)
+        if local(el.tag) == "Subtitle":
+            self._subtitle(el, italic, offset)
+            return
+        for c in el:
+            self.visit(c, italic, offset)
+
+
 def parse_subtitle_file(path, offset):
     """
     Επιστρέφει (entries, γλώσσα, σημείωση). entry = (αρχή, τέλος, items) σε χρόνο ταινίας.
@@ -65,114 +168,19 @@ def parse_subtitle_file(path, offset):
     """
     with open(path, "rb") as f:
         data = f.read()
-    is_mxf = path.lower().endswith(".mxf")
-    xmlb = _sub_xml_bytes(data, is_mxf)
+    xmlb = _sub_xml_bytes(data, path.lower().endswith(".mxf"))
     if not xmlb:
         return [], None, "δεν βρέθηκε XML υποτίτλων"
     root = ET.fromstring(xmlb)
-    interop = local(root.tag) == "DCSubtitle"
-    lang = text(root, "Language")
-    if interop:
-        tick = 250
-    else:
-        r = (text(root, "TimeCodeRate") or text(root, "EditRate") or "24").split()
-        tick = Fraction(int(r[0]), int(r[1]) if len(r) > 1 else 1)
-
-    # εικόνες: Interop = αρχεία PNG δίπλα, SMPTE = μέσα στο MXF (αντιστοίχιση με σειρά εμφάνισης)
-    img_ids = []
-    for im in find_all(root, "Image"):
-        k = (im.text or "").strip()
-        if k and k not in img_ids:
-            img_ids.append(k)
-    blobs = _png_blobs(data) if is_mxf and img_ids else []
-    folder = os.path.dirname(path)
-
-    def png_for(ref):
-        ref = ref.strip()
-        if blobs and ref in img_ids and img_ids.index(ref) < len(blobs):
-            return blobs[img_ids.index(ref)]
-        for cand in (ref, norm_id(ref) + ".png", ref + ".png"):
-            p = os.path.join(folder, cand)
-            if os.path.isfile(p):
-                with open(p, "rb") as f:
-                    return f.read()
-        return None
-
-    out, missing_imgs = [], 0
-
-    def collect(el, italic, cur):
-        it = italic
-        if local(el.tag) == "Font" and el.get("Italic") is not None:
-            it = _truthy(el.get("Italic"))
-        if el.text:
-            cur.append((el.text, it))
-        for c in el:
-            if local(c.tag) == "Space":
-                cur.append((" ", it))
-            else:
-                collect(c, it, cur)
-            if c.tail:
-                cur.append((c.tail, it))
-
-    def attr(el, *names, default=None):
-        for n in names:
-            if el.get(n) is not None:
-                return el.get(n)
-        return default
-
-    def visit(el, italic):
-        nonlocal missing_imgs
-        if local(el.tag) == "Font" and el.get("Italic") is not None:
-            italic = _truthy(el.get("Italic"))
-        if local(el.tag) == "Subtitle":
-            t_in = _sub_time(el.get("TimeIn", "0:0:0:0"), tick)
-            t_out = _sub_time(el.get("TimeOut", "0:0:0:0"), tick)
-            items = []
-            for tx in el.iter():
-                n = local(tx.tag)
-                if n not in ("Text", "Image"):
-                    continue
-                valign = (attr(tx, "VAlign", "Valign", default="bottom")).lower()
-                vpos = float(attr(tx, "VPosition", "Vposition", default="0") or 0)
-                halign = (attr(tx, "HAlign", "Halign", default="center")).lower()
-                hpos = float(attr(tx, "HPosition", "Hposition", default="0") or 0)
-                y = vpos if valign == "top" else (50 + vpos if valign == "center" else 100 - vpos)
-                if n == "Image":
-                    png = png_for(tx.text or "")
-                    if png is None:
-                        missing_imgs += 1
-                        continue
-                    items.append({"type": "image", "png": png, "valign": valign, "vpos": vpos,
-                                  "halign": halign, "hpos": hpos, "y": y})
-                    continue
-                cur = []
-                collect(tx, italic, cur)
-                line = "".join(t for t, _ in cur).strip()
-                if line:
-                    items.append({"type": "text", "text": line, "y": y,
-                                  "italic": any(i for t, i in cur if t.strip())})
-            items.sort(key=lambda r: r["y"])
-            if items:
-                out.append((offset + t_in, offset + t_out, items))
-            return
-        for c in el:
-            visit(c, italic)
-
-    visit(root, False)
-    out.sort(key=lambda s: s[0])
-    note = f"{missing_imgs} εικόνες υποτίτλων δεν βρέθηκαν" if missing_imgs else None
-    return out, lang, note
+    subs = _DcpSubtitles(path, data, root)
+    subs.visit(root, False, offset)
+    subs.entries.sort(key=lambda s: s[0])
+    note = f"{subs.missing_imgs} εικόνες υποτίτλων δεν βρέθηκαν" if subs.missing_imgs else None
+    return subs.entries, text(root, "Language"), note
 
 
 def parse_srt(path):
-    with open(path, "rb") as f:
-        raw = f.read()
-    for enc in ("utf-8-sig", "cp1253", "latin-1"):
-        try:
-            txt = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
+    txt = read_text(path)
     out = []
     for block in re.split(r"\r?\n\s*\r?\n", txt.strip()):
         lines = block.strip().splitlines()

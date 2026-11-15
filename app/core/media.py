@@ -1,7 +1,7 @@
 """Ανάλυση εικόνας/ήχου και καρέ (thumbnail) με PyAV."""
 import io
-from fractions import Fraction
 
+from app.core.avio import frame_at
 from app.core.config import log
 
 
@@ -47,20 +47,11 @@ def thumbnail(cpl, at=None, width=480):
         vs = c.streams.video[0]
         if vs.codec_context.name == "jpeg2000":
             vs.codec_context.options = {"lowres": "1"}
-        mult = 2 if reel.stereo else 1
-        frame_no = (reel.pic_entry + int((max(0.0, at - reel.start)) * float(reel.rate))) * mult
-        target = Fraction(frame_no) / (reel.rate * mult)
-        start = vs.start_time or 0
-        try:
-            c.seek(int(target / vs.time_base) + start, stream=vs, backward=True)
-        except Exception:
-            pass
-        for fr in c.decode(vs):
-            if fr.time is not None and fr.time - float(start * vs.time_base) + 0.001 < float(target):
-                continue
-            h = max(2, int(fr.height * width / fr.width) // 2 * 2)
-            img = Image.fromarray(fr.reformat(width=width, height=h, format="rgb24").to_ndarray())
-            buf = io.BytesIO()
-            img.save(buf, "PNG")
-            return buf.getvalue()
-    return None
+        fr = frame_at(c, vs, reel, at - reel.start)
+        if fr is None:
+            return None
+        h = max(2, int(fr.height * width / fr.width) // 2 * 2)
+        img = Image.fromarray(fr.reformat(width=width, height=h, format="rgb24").to_ndarray())
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()

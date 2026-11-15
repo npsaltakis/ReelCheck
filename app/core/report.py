@@ -1,6 +1,5 @@
 """Κατάσταση ταινίας, γραμμές πίνακα, CSV και αναφορά HTML."""
 import base64
-import csv
 import datetime
 import html
 
@@ -8,7 +7,7 @@ from app.core.config import APP_NAME, APP_VERSION, log
 from app.core.i18n import tr, tr_html
 from app.core.hashing import hash_summary
 from app.core.subtitles import track_summary
-from app.core.util import fmt_time
+from app.core.util import fmt_time, write_excel_csv
 
 
 # ----------------------------------------------------------------- ΚΑΤΑΣΤΑΣΗ / ΑΝΑΦΟΡΕΣ
@@ -68,12 +67,8 @@ def item_row(item):
 
 def write_csv(items, path):
     rows = [item_row(i) for i in items]
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        f.write("sep=;\n")  # για να το ανοίγει σωστά το ελληνικό Excel
-        header = list(rows[0].keys()) if rows else ["Τίτλος"]
-        w = csv.writer(f, delimiter=";")
-        w.writerow([tr(h) for h in header])
-        w.writerows([[tr(str(r[h])) for h in header] for r in rows])
+    header = list(rows[0].keys()) if rows else ["Τίτλος"]
+    write_excel_csv(path, [tr(h) for h in header], [[tr(str(r[h])) for h in header] for r in rows])
     log.info("CSV: %s (%d ταινίες)", path, len(rows))
 
 

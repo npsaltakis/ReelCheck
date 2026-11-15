@@ -4,6 +4,7 @@ import os
 from app.checks.dcnc import parse_dcnc
 from app.core.config import log
 from app.core.dcp import load_dcp
+from app.core.util import is_dcp_folder
 
 
 # ======================================================================== ΣΧΕΤΙΚΑ CPL / ΕΝΑΛΛΑΚΤΙΚΟΣ ΗΧΟΣ
@@ -16,8 +17,7 @@ def sibling_cpls(cpl, tolerance=1.0):
     try:
         for n in sorted(os.listdir(parent)):
             d = os.path.join(parent, n)
-            if os.path.normcase(d) != os.path.normcase(cpl.folder) and os.path.isdir(d) and \
-                    any(f.upper().startswith("ASSETMAP") for f in os.listdir(d)):
+            if os.path.normcase(d) != os.path.normcase(cpl.folder) and is_dcp_folder(d):
                 folders.append(d)
     except OSError:
         pass

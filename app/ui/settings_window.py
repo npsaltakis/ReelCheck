@@ -15,6 +15,7 @@ from app.core.config import APP_DIR, APP_NAME, HASH_CACHE_FILE, SETTINGS_FILE, s
 from app.core.util import fmt_size
 from app.ui.dialogs import SpecForm
 from app.ui.i18n_tk import label_key
+from app.ui.widgets import ask_folder, labeled_combo
 
 TABS = ("general", "folders", "playback", "checks", "festival", "data")
 THEMES = {"auto": "Αυτόματα (όπως τα Windows)", "light": "Φωτεινό", "dark": "Σκούρο"}
@@ -76,10 +77,7 @@ class SettingsWindow:
         self.vars[key] = ("bool", var)
 
     def _combo(self, page, key, label, labels, row, width=32):
-        ttk.Label(page, text=label).grid(row=row, column=0, sticky="w", pady=3)
-        var = tk.StringVar(value=labels.get(prefs.get(key), list(labels.values())[0]))
-        ttk.Combobox(page, textvariable=var, values=list(labels.values()), state="readonly", width=width).grid(
-            row=row, column=1, columnspan=2, sticky="w", pady=3)
+        var, _ = labeled_combo(page, row, 0, label, labels, prefs.get(key), width=width, colspan=2, padx=0, pady=3)
         self.vars[key] = ("choice", var, labels)
 
     def _number(self, page, key, label, row, lo, hi):
@@ -112,15 +110,10 @@ class SettingsWindow:
             ttk.Label(page, text=label).grid(row=r, column=0, columnspan=2, sticky="w", pady=(8, 2))
             var = tk.StringVar(value=prefs.get(key))
             ttk.Entry(page, textvariable=var).grid(row=r + 1, column=0, sticky="we")
-            ttk.Button(page, text="…", width=3, command=lambda v=var: self._pick_folder(v)).grid(
+            ttk.Button(page, text="…", width=3, command=lambda v=var: ask_folder(self.win, None, v)).grid(
                 row=r + 1, column=1, padx=4)
             self.vars[key] = ("folder", var)
             r += 2
-
-    def _pick_folder(self, var):
-        d = filedialog.askdirectory(parent=self.win, initialdir=var.get() or None)
-        if d:
-            var.set(os.path.normpath(d))
 
     def _playback(self, page):
         from app.player.audio import output_devices

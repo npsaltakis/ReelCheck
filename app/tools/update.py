@@ -16,7 +16,7 @@ import tempfile
 import urllib.request
 
 from app.core.config import APP_NAME, APP_VERSION, log
-from app.core.hashing import Cancelled
+from app.core.util import Cancelled
 
 GITHUB_REPO = "npsaltakis/ReelCheck"
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"

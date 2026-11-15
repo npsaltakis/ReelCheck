@@ -1,13 +1,11 @@
 """Έλεγχος αρχείων με το PKL (μέγεθος + SHA-1), με cache."""
-import base64
-import hashlib
 import json
 import os
 import threading
 
 from app.core.config import APP_DIR, HASH_CACHE_FILE, log
 from app.core.dcp import read_pkls
-from app.core.util import fmt_size
+from app.core.util import fmt_size, sha1_file
 
 
 # ----------------------------------------------------------------- HASH (PKL)
@@ -44,10 +42,6 @@ def _hash_cache_put(key, value):
             pass
 
 
-class Cancelled(Exception):
-    pass
-
-
 def verify_cpl(cpl, progress=None, cancel=None):
     """
     Έλεγχος αρχείων του CPL με το PKL (μέγεθος + SHA-1).
@@ -57,7 +51,7 @@ def verify_cpl(cpl, progress=None, cancel=None):
     for d in set(cpl.external.values()):  # τα assets του OV ελέγχονται με το PKL του OV
         for k, v in read_pkls(d).items():
             pkl.setdefault(k, v)
-    items = [(cpl.id, cpl.path)] + [(aid, f) for aid, f in cpl.assets.items()]
+    items = [(cpl.id, cpl.path)] + list(cpl.assets.items())
     results, todo = [], []
     for aid, f in items:
         p = pkl.get(aid)
@@ -82,19 +76,12 @@ def verify_cpl(cpl, progress=None, cancel=None):
         key = cache_key(f)
         got = cache.get(key)
         if got is None:
-            h = hashlib.sha1()
-            with open(f, "rb") as fh:
-                while True:
-                    if cancel is not None and cancel.is_set():
-                        raise Cancelled()
-                    b = fh.read(8 * 1024 * 1024)
-                    if not b:
-                        break
-                    h.update(b)
-                    done += len(b)
-                    if progress:
-                        progress(done, total, r["name"])
-            got = base64.b64encode(h.digest()).decode()
+            def step(b, name=r["name"]):
+                nonlocal done
+                done += len(b)
+                if progress:
+                    progress(done, total, name)
+            got = sha1_file(f, on_chunk=step, cancel=cancel)
             _hash_cache_put(key, got)
         else:
             done += size

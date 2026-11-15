@@ -3,7 +3,6 @@
 επικαλύψεις, πολύ σύντομοι / πολύ μεγάλοι, ταχύτητα ανάγνωσης (χαρακτήρες/δευτ.), μακριές γραμμές,
 πάνω από 2 γραμμές, κενοί, εκτός διάρκειας. Μετατόπιση χρόνου, αλλαγή fps, αποθήκευση .srt.
 """
-from app.core.util import fmt_time
 
 from app.core import prefs
 
@@ -112,6 +111,3 @@ def write_srt(entries, path):
     with open(path, "w", encoding="utf-8-sig", newline="\r\n") as f:
         f.write(to_srt(entries))
 
-
-def describe(n, level, t, text):
-    return f"#{n} {fmt_time(t)}  {text}"

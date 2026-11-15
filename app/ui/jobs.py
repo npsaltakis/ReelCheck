@@ -3,7 +3,7 @@ import queue
 import threading
 
 from app.core.config import log
-from app.core.hashing import Cancelled
+from app.core.util import Cancelled
 
 
 class JobRunner:

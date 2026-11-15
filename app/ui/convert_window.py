@@ -3,7 +3,9 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from app.core import prefs
 from app.ui.i18n_tk import label_key
+from app.ui.widgets import ask_folder, labeled_combo, make_tree
 from app.core.config import APP_NAME, VIDEO_EXT, get_setting, set_setting
 from app.core.util import fmt_time
 from app.tools.convert import DEFAULT_OPTS, warnings_for
@@ -47,22 +49,14 @@ class ConvertWindow:
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=(0, 4))
         self.total_var = tk.StringVar()
         ttk.Label(bar, textvariable=self.total_var).pack(side="right")
-        self.tree = ttk.Treeview(f, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
-        for key, text, width in COLUMNS:
-            self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor="w", stretch=key == "file")
+        self.tree = make_tree(f, COLUMNS, stretch=("file",), selectmode="extended")
         self.tree.pack(fill="both", expand=True)
         self.warn_var = tk.StringVar()
         self.warn_label = ttk.Label(f, textvariable=self.warn_var, wraplength=900, justify="left")
         self.warn_label.pack(fill="x", pady=(6, 0))
 
     def _combo(self, parent, row, col, label, labels, value):
-        ttk.Label(parent, text=label).grid(row=row, column=col, sticky="w", padx=(0, 6))
-        var = tk.StringVar(value=labels.get(value, list(labels.values())[0]))
-        cb = ttk.Combobox(parent, textvariable=var, values=list(labels.values()), state="readonly", width=22)
-        cb.grid(row=row, column=col + 1, sticky="w", padx=(0, 18))
-        cb.bind("<<ComboboxSelected>>", lambda e: self.refresh_warnings())
-        return var, labels
+        return labeled_combo(parent, row, col, label, labels, value, width=22, on_change=self.refresh_warnings)
 
     def _build_options(self):
         saved = dict(DEFAULT_OPTS, **(get_setting("convert_opts", {}) or {}))
@@ -99,7 +93,7 @@ class ConvertWindow:
         f = ttk.Frame(self.win, padding=(10, 0, 10, 10))
         f.pack(fill="x")
         ttk.Label(f, text="Φάκελος εξόδου:").pack(side="left")
-        self.out_dir = tk.StringVar(value=get_setting("convert_out", "") or "")
+        self.out_dir = tk.StringVar(value=prefs.folder("convert_out"))
         ttk.Entry(f, textvariable=self.out_dir, width=40).pack(side="left", padx=6)
         ttk.Button(f, text="…", width=3, command=self.choose_out).pack(side="left")
         self.start_btn = ttk.Button(f, text="▶  Μετατροπή σε DCP", command=self.start)
@@ -138,7 +132,7 @@ class ConvertWindow:
             self.add_paths(list(paths))
 
     def add_folder(self):
-        d = filedialog.askdirectory(parent=self.win, title="Φάκελος με βίντεο")
+        d = ask_folder(self.win, "Φάκελος με βίντεο")
         if d:
             self.add_paths([os.path.join(d, f) for f in sorted(os.listdir(d))])
 
@@ -192,9 +186,7 @@ class ConvertWindow:
                 "standard": "interop" if self.interop.get() else "SMPTE", "reel_per_film": True}
 
     def choose_out(self):
-        d = filedialog.askdirectory(parent=self.win, title="Πού να γραφτούν τα DCP;")
-        if d:
-            self.out_dir.set(os.path.normpath(d))
+        ask_folder(self.win, "Πού να γραφτούν τα DCP;", self.out_dir)
 
     def start(self):
         good = [i for i in self.infos if not i["error"]]

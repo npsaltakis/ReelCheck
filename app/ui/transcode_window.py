@@ -3,7 +3,9 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from app.core import prefs
 from app.ui.i18n_tk import label_key
+from app.ui.widgets import ask_folder, labeled_combo, make_tree
 from app.core.config import APP_NAME, VIDEO_EXT, get_setting, set_setting
 from app.core.util import fmt_time
 from app.tools.mediainfo import find_srt
@@ -61,18 +63,11 @@ class TranscodeWindow:
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=(0, 4))
         self.total_var = tk.StringVar()
         ttk.Label(bar, textvariable=self.total_var).pack(side="right")
-        self.tree = ttk.Treeview(f, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
-        for key, text, width in COLUMNS:
-            self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor="w", stretch=key == "file")
+        self.tree = make_tree(f, COLUMNS, stretch=("file",), selectmode="extended")
         self.tree.pack(fill="both", expand=True)
 
     def _combo(self, parent, row, col, label, labels, value):
-        ttk.Label(parent, text=label).grid(row=row, column=col, sticky="w", padx=(0, 6))
-        var = tk.StringVar(value=labels.get(value, list(labels.values())[0]))
-        ttk.Combobox(parent, textvariable=var, values=list(labels.values()), state="readonly", width=26).grid(
-            row=row, column=col + 1, sticky="w", padx=(0, 18))
-        return var, labels
+        return labeled_combo(parent, row, col, label, labels, value, width=26)
 
     def _build_options(self, gpu_label):
         s = dict(DEFAULTS, **(get_setting("transcode_opts", {}) or {}))
@@ -101,7 +96,7 @@ class TranscodeWindow:
         f = ttk.Frame(self.win, padding=(10, 0, 10, 10))
         f.pack(fill="x")
         ttk.Label(f, text="Φάκελος εξόδου:").pack(side="left")
-        self.out_dir = tk.StringVar(value=get_setting("transcode_out", "") or "")
+        self.out_dir = tk.StringVar(value=prefs.folder("transcode_out"))
         ttk.Entry(f, textvariable=self.out_dir, width=42).pack(side="left", padx=6)
         ttk.Button(f, text="…", width=3, command=self.choose_out).pack(side="left")
         ttk.Label(f, text="(κενό = δίπλα στο πρωτότυπο)").pack(side="left", padx=6)
@@ -123,7 +118,7 @@ class TranscodeWindow:
             self.add_paths(list(paths))
 
     def add_folder(self):
-        d = filedialog.askdirectory(parent=self.win, title="Φάκελος με βίντεο")
+        d = ask_folder(self.win, "Φάκελος με βίντεο")
         if d:
             self.add_paths([os.path.join(d, f) for f in sorted(os.listdir(d))])
 
@@ -156,9 +151,7 @@ class TranscodeWindow:
                 "remux": bool(self.remux.get())}
 
     def choose_out(self):
-        d = filedialog.askdirectory(parent=self.win, title="Πού να γραφτούν τα νέα αρχεία;")
-        if d:
-            self.out_dir.set(os.path.normpath(d))
+        ask_folder(self.win, "Πού να γραφτούν τα νέα αρχεία;", self.out_dir)
 
     def start(self):
         good = [i for i in self.items if not i["error"]]

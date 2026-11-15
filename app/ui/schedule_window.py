@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from app.core.config import APP_NAME
 from app.tools import schedule as sch
+from app.ui.widgets import make_tree
 
 COLUMNS = (("date", "Ημερομηνία", 90), ("time", "Ώρα", 55), ("end", "Λήξη", 55), ("room", "Αίθουσα", 110),
            ("title", "Ταινία", 360), ("dcp", "DCP", 110), ("notes", "Σημειώσεις", 220))
@@ -42,10 +43,7 @@ class ScheduleWindow:
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=(0, 4))
         self.info_var = tk.StringVar()
         ttk.Label(bar, textvariable=self.info_var).pack(side="right")
-        self.tree = ttk.Treeview(f, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
-        for key, text, width in COLUMNS:
-            self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor="w", stretch=key in ("title", "notes"))
+        self.tree = make_tree(f, COLUMNS, stretch=("title", "notes"), selectmode="extended")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self.edit_selected)
         self.theme.tag_tree(self.tree, extra=[("clash", "err")])

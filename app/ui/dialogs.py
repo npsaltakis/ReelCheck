@@ -1,11 +1,12 @@
 """Φόρμες και διάλογοι: προδιαγραφές φεστιβάλ, κατάλογος φεστιβάλ."""
-import csv
 import os
 import tkinter as tk
 from tkinter import filedialog, ttk
 
 from app.checks.spec import AUDIO_CHOICES
+from app.core.util import write_excel_csv
 from app.ui.i18n_tk import label_key
+from app.ui.widgets import make_tree
 
 
 def _num_list(text):
@@ -72,15 +73,6 @@ class SpecForm:
                 "no_encrypted": bool(self.no_enc.get()), "no_3d": bool(self.no_3d.get())}
 
 
-def write_table_csv(path, header, rows):
-    """CSV που ανοίγει σωστά στο ελληνικό Excel."""
-    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-        fh.write("sep=;\n")
-        w = csv.writer(fh, delimiter=";")
-        w.writerow(header)
-        w.writerows(rows)
-
-
 class CatalogWindow:
     """Αποτέλεσμα αντιστοίχισης καταλόγου φεστιβάλ με τα DCP. rows: [(τίτλος, DCP, κατάσταση)]."""
 
@@ -93,10 +85,7 @@ class CatalogWindow:
         w.geometry("1000x520")
         theme.toplevel(w, parent)
         ttk.Label(w, padding=8, text=summary).pack(anchor="w")
-        tv = ttk.Treeview(w, columns=("a", "b", "c"), show="headings")
-        for col, txt, wd in zip(("a", "b", "c"), self.HEADER, (260, 560, 100)):
-            tv.heading(col, text=txt)
-            tv.column(col, width=wd, anchor="w", stretch=col == "b")
+        tv = make_tree(w, list(zip(("a", "b", "c"), self.HEADER, (260, 560, 100))), stretch=("b",))
         theme.tag_tree(tv, extra=[("ΛΕΙΠΕΙ", "err")])
         for r in rows:
             tv.insert("", "end", values=r, tags=(r[2],))
@@ -107,5 +96,5 @@ class CatalogWindow:
         out = filedialog.asksaveasfilename(parent=self.win, defaultextension=".csv",
                                            initialfile="Κατάλογος_έλεγχος.csv", filetypes=[("CSV (Excel)", "*.csv")])
         if out:
-            write_table_csv(out, self.HEADER, self.rows)
+            write_excel_csv(out, self.HEADER, self.rows)
             os.startfile(out)

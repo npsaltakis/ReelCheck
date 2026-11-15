@@ -6,6 +6,9 @@ integrated (όλο το πρόγραμμα), LRA (εύρος), true peak (dBTP),
 import math
 from fractions import Fraction
 
+from app.core.avio import fit_channels, frame_to_float
+from app.core.util import check_cancel
+
 LAYOUTS = {1: "mono", 2: "stereo", 6: "5.1", 8: "7.1"}
 
 
@@ -42,22 +45,12 @@ class LoudnessMeter:
         g.link_nodes(src, g.add("ebur128", "metadata=1:peak=true"), g.add("abuffersink")).configure()
         self.graph = g
 
-    def _fit(self, a):
-        """Προσαρμογή καναλιών στο layout του μετρητή."""
-        import numpy as np
-        if a.shape[1] == self.nch:
-            return a
-        out = np.zeros((len(a), self.nch), np.float32)
-        k = min(self.nch, a.shape[1])
-        out[:, :k] = a[:, :k]
-        return out
-
     def add(self, a):
         """a: numpy (n, κανάλια) float32 σε [-1, 1]."""
         import numpy as np
         if not len(a):
             return
-        data = np.ascontiguousarray(self._fit(a).T.astype(np.float32))
+        data = np.ascontiguousarray(fit_channels(a, self.nch).T.astype(np.float32))
         f = self.av.AudioFrame.from_ndarray(data, format="fltp", layout=self.layout)
         f.sample_rate = self.rate
         f.pts, f.time_base = self.samples, Fraction(1, self.rate)
@@ -67,13 +60,7 @@ class LoudnessMeter:
 
     def add_frame(self, frame):
         """Κατευθείαν av.AudioFrame (μετατρέπεται σε float)."""
-        import numpy as np
-        a = frame.to_ndarray()
-        ch = frame.layout.nb_channels if hasattr(frame.layout, "nb_channels") else len(frame.layout.channels)
-        a = a.T if frame.format.is_planar else a.reshape(-1, ch)
-        if a.dtype.kind in "iu":
-            a = a.astype(np.float32) / float(np.iinfo(a.dtype).max)
-        self.add(a.astype(np.float32))
+        self.add(frame_to_float(frame))
 
     def _drain(self):
         while True:
@@ -110,9 +97,7 @@ def measure_file(path, cancel=None):
         meter = LoudnessMeter(st.codec_context.channels or 2, 48000)
         resampler = av.AudioResampler(format="fltp", layout=meter.layout, rate=48000)
         for fr in c.decode(st):
-            if cancel is not None and cancel.is_set():
-                from app.core.hashing import Cancelled
-                raise Cancelled()
+            check_cancel(cancel)
             for rf in resampler.resample(fr):
                 meter.add_frame(rf)
         for rf in resampler.resample(None):

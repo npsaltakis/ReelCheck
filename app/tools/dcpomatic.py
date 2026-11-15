@@ -16,7 +16,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from app.core.config import APP_NAME, APP_VERSION, get_setting, log, set_setting
-from app.core.hashing import Cancelled
+from app.core.util import Cancelled
+from app.core.util import is_dcp_folder
 
 DOWNLOAD_PAGE = "https://dcpomatic.com/download"
 DCP_TIME_RATE = 96000          # μονάδες χρόνου του DCP-o-matic ανά δευτερόλεπτο
@@ -295,7 +296,7 @@ def make_dcp(tools, film_dir, progress=None, cancel=None, threads=None):
         raise RuntimeError("Το DCP-o-matic απέτυχε:\n" + "\n".join(clean[-5:]))
     for d in sorted(os.listdir(film_dir)):
         p = os.path.join(film_dir, d)
-        if os.path.isdir(p) and any(f.upper().startswith("ASSETMAP") for f in os.listdir(p)):
+        if is_dcp_folder(p):
             return p
     raise RuntimeError("Δεν βρέθηκε το DCP μετά την κωδικοποίηση.")
 

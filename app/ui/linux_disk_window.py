@@ -6,9 +6,15 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from app.core.config import APP_NAME, get_setting, log, set_setting
+from app.core.config import APP_NAME, log, set_setting
 from app.core.util import fmt_size
+from app.core import prefs
 from app.tools import extfs
+from app.ui.widgets import ask_folder, make_tree
+
+PART_COLUMNS = (("disk", "Δίσκος", 60), ("part", "Partition", 70), ("size", "Μέγεθος", 90),
+                ("model", "Μοντέλο", 360), ("bus", "Σύνδεση", 80))
+DCP_COLUMNS = (("path", "Φάκελος", 640), ("size", "Μέγεθος", 100), ("files", "Αρχεία", 70))
 
 WARNING = ("ΠΡΟΣΟΧΗ: όταν συνδέεις δίσκο Linux, τα Windows μπορεί να ρωτήσουν «Πρέπει να διαμορφώσετε τον δίσκο». "
            "Πάτα ΑΚΥΡΟ. Η διαμόρφωση σβήνει όλα τα DCP. Το ReelCheck μόνο διαβάζει, δεν γράφει τίποτα στον δίσκο.")
@@ -40,12 +46,7 @@ class LinuxDiskWindow:
         ttk.Label(top, text="1. Partitions Linux στους συνδεδεμένους δίσκους:").pack(side="left")
         ttk.Button(top, text="Ανανέωση", command=self.refresh_partitions).pack(side="right")
         ttk.Button(top, text="Αρχείο εικόνας δίσκου (.img)…", command=self.open_image).pack(side="right", padx=4)
-        self.parts_tree = ttk.Treeview(self.win, columns=("disk", "part", "size", "model", "bus"), show="headings",
-                                       height=4)
-        for key, text, width in (("disk", "Δίσκος", 60), ("part", "Partition", 70), ("size", "Μέγεθος", 90),
-                                 ("model", "Μοντέλο", 360), ("bus", "Σύνδεση", 80)):
-            self.parts_tree.heading(key, text=text)
-            self.parts_tree.column(key, width=width, anchor="w", stretch=key == "model")
+        self.parts_tree = make_tree(self.win, PART_COLUMNS, stretch=("model",), height=4)
         self.parts_tree.pack(fill="x", padx=10)
         row = ttk.Frame(self.win, padding=(10, 6))
         row.pack(fill="x")
@@ -57,10 +58,7 @@ class LinuxDiskWindow:
         ttk.Label(self.win, text="2. DCP στον δίσκο:", padding=(10, 6, 10, 2)).pack(anchor="w")
         f = ttk.Frame(self.win, padding=(10, 0))
         f.pack(fill="both", expand=True)
-        self.dcp_tree = ttk.Treeview(f, columns=("path", "size", "files"), show="headings", selectmode="extended")
-        for key, text, width in (("path", "Φάκελος", 640), ("size", "Μέγεθος", 100), ("files", "Αρχεία", 70)):
-            self.dcp_tree.heading(key, text=text)
-            self.dcp_tree.column(key, width=width, anchor="w", stretch=key == "path")
+        self.dcp_tree = make_tree(f, DCP_COLUMNS, stretch=("path",), selectmode="extended")
         self.dcp_tree.pack(fill="both", expand=True)
         self.fs_var = tk.StringVar(value="Διάλεξε partition και «Ανάγνωση επιλεγμένου».")
         ttk.Label(self.win, textvariable=self.fs_var, padding=(10, 4)).pack(anchor="w")
@@ -68,7 +66,7 @@ class LinuxDiskWindow:
         bot = ttk.Frame(self.win, padding=(10, 0, 10, 10))
         bot.pack(fill="x")
         ttk.Label(bot, text="3. Αντιγραφή στον φάκελο:").pack(side="left")
-        self.dest = tk.StringVar(value=get_setting("ingest_dest", "") or "")
+        self.dest = tk.StringVar(value=prefs.folder("ingest_dest"))
         ttk.Entry(bot, textvariable=self.dest, width=45).pack(side="left", padx=6)
         ttk.Button(bot, text="…", width=3, command=self.choose_dest).pack(side="left")
         self.scan = tk.IntVar(value=1)
@@ -154,9 +152,7 @@ class LinuxDiskWindow:
 
     # ------------------------------------------------------------------ αντιγραφή
     def choose_dest(self):
-        d = filedialog.askdirectory(parent=self.win, title="Φάκελος του φεστιβάλ")
-        if d:
-            self.dest.set(os.path.normpath(d))
+        ask_folder(self.win, "Φάκελος του φεστιβάλ", self.dest)
 
     def start(self):
         if not self.fs:

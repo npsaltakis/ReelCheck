@@ -281,7 +281,7 @@ class ExtFS:
                     if cancel is not None and cancel.is_set():
                         f.close()
                         os.remove(tmp)
-                        from app.core.hashing import Cancelled
+                        from app.core.util import Cancelled
                         raise Cancelled()
                     f.write(data)
                     done += len(data)
@@ -372,3 +372,22 @@ def is_admin():
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False
+
+
+def unique_targets(dest, paths):
+    """
+    Φάκελοι προορισμού για DCP από δίσκο Linux. Αν δύο έχουν το ίδιο όνομα (σε άλλους φακέλους του δίσκου),
+    στο δεύτερο μπαίνει και ο γονικός φάκελος, ώστε να μην ανακατευτούν.
+    """
+    out, used = [], set()
+    for p in paths:
+        parts = p.strip("/").split("/")
+        name = parts[-1]
+        if name.lower() in used or os.path.exists(os.path.join(dest, name)):
+            name = f"{parts[-1]} ({parts[-2] if len(parts) > 1 else 'δίσκος'})"
+        n, base = 2, name
+        while name.lower() in used:
+            name, n = f"{base} {n}", n + 1
+        used.add(name.lower())
+        out.append(os.path.join(dest, name))
+    return out

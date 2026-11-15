@@ -2,15 +2,39 @@
 import queue
 import threading
 import time
-from fractions import Fraction
 
 from app.core.config import log
 from app.core.util import fmt_time
 from app.core import prefs
+from app.core.avio import reel_audio, seek_seconds
 from app.player.audio import AudioOut, END, device_index, put
 
 
 INTRA_CODECS = {"jpeg2000", "prores", "dnxhd", "mjpeg", "ffv1", "huffyuv", "cfhd", "rawvideo", "v210", "png", "tiff"}
+
+
+class _ReelPos:
+    """Αρίθμηση καρέ ενός reel: δείκτης καρέ από timestamp (στα 3D δύο καρέ ανά εικόνα) και χρόνος ταινίας."""
+
+    def __init__(self, reel, stream, offset_frames):
+        self.reel = reel
+        self.mult = 2 if reel.stereo else 1
+        self.first = (reel.pic_entry + offset_frames) * self.mult
+        self.last = (reel.pic_entry + reel.dur) * self.mult
+        self.tb, self.st0 = stream.time_base, stream.start_time or 0
+        self.frate = reel.rate * self.mult
+        self.counter = self.first - 1
+
+    def index(self, ts):
+        return int(round((ts - self.st0) * self.tb * self.frate))
+
+    def next_counter(self):
+        """Για καρέ χωρίς timestamp: ο επόμενος αύξων αριθμός."""
+        self.counter += 1
+        return self.counter
+
+    def time(self, idx):
+        return self.reel.start + (idx // self.mult - self.reel.pic_entry) / float(self.reel.rate)
 
 
 class LoudnessTrack:
@@ -140,76 +164,71 @@ class Playback:
         put(self.vq, END, self.stop)
 
     def _video_inner(self):
-        import av
         for reel in self.cpl.reels:
             if self.stop.is_set():
                 return
             if reel.start + reel.seconds <= self.t0 or not reel.pic:
                 continue
-            mult = 2 if reel.stereo else 1
-            off = max(0, int(round((self.t0 - reel.start) * reel.rate)))
-            first, last = (reel.pic_entry + off) * mult, (reel.pic_entry + reel.dur) * mult
-            with av.open(reel.pic) as c:
-                vs = c.streams.video[0]
-                vs.thread_type = "AUTO"
-                cc = vs.codec_context
-                intra = cc.name in INTRA_CODECS
-                if self.lowres and cc.name == "jpeg2000":
-                    cc.options = {"lowres": str(self.lowres)}
-                tb = vs.time_base
-                st0 = vs.start_time or 0
-                frate = reel.rate * mult
-                if first > 0:
-                    try:
-                        c.seek(int(Fraction(first) / frate / tb) + st0, stream=vs, backward=True)
-                    except Exception:
-                        pass
-                counter = [first - 1]
+            if not self._video_reel(reel):
+                return
 
-                def emit(fr):
-                    # ο decoder με threads βγάζει καρέ με καθυστέρηση: ο χρόνος παίρνεται από το ίδιο το καρέ
-                    if fr.pts is not None:
-                        idx = int(round((fr.pts - st0) * tb * frate))
-                    else:
-                        counter[0] += 1
-                        idx = counter[0]
-                    if idx < first or idx >= last or (mult == 2 and idx % 2 != self.eye):
-                        return True
-                    t = reel.start + (idx // mult - reel.pic_entry) / float(reel.rate)
-                    if not intra and self.started and not self.paused and t < self.clock() - 0.08:
-                        self.dropped += 1  # inter codec: αποκωδικοποιείται αλλά δεν εμφανίζεται
-                        return True
-                    W, H = self.size_fn()
-                    s = min(W / fr.width, H / fr.height)
-                    w, h = max(2, int(fr.width * s) // 2 * 2), max(2, int(fr.height * s) // 2 * 2)
-                    img = fr.reformat(width=w, height=h, format="rgb24")
-                    return put(self.vq, (t, img.to_ndarray().tobytes(), w, h, fr.width, fr.height), self.stop)
+    def _late(self, t):
+        """Η εικόνα της στιγμής t έχει ήδη περάσει (αργεί η αποκωδικοποίηση)."""
+        return self.started and not self.paused and t < self.clock() - 0.08
 
-                for pkt in c.demux(vs):
-                    if self.stop.is_set():
-                        return
-                    if pkt.size == 0:
+    def _video_reel(self, reel):
+        """Τα καρέ ενός reel στην ουρά. False αν πρέπει να σταματήσει η αναπαραγωγή."""
+        import av
+        off = max(0, int(round((self.t0 - reel.start) * reel.rate)))
+        with av.open(reel.pic) as c:
+            vs = c.streams.video[0]
+            vs.thread_type = "AUTO"
+            cc = vs.codec_context
+            if self.lowres and cc.name == "jpeg2000":
+                cc.options = {"lowres": str(self.lowres)}
+            pos = _ReelPos(reel, vs, off)
+            seek_seconds(c, vs, pos.first / pos.frate)
+            intra = cc.name in INTRA_CODECS
+            for pkt in c.demux(vs):
+                if self.stop.is_set():
+                    return False
+                if pkt.size == 0:
+                    continue
+                ts = pkt.pts if pkt.pts is not None else pkt.dts
+                if intra and ts is not None:
+                    idx = pos.index(ts)
+                    if idx < pos.first:
                         continue
-                    ts = pkt.pts if pkt.pts is not None else pkt.dts
-                    if intra and ts is not None:
-                        idx = int(round((ts - st0) * tb * frate))
-                        if idx < first:
-                            continue
-                        if idx >= last:
-                            break
-                        t = reel.start + (idx // mult - reel.pic_entry) / float(reel.rate)
-                        # όλα intra: αν αργούμε, πετάμε πακέτα χωρίς αποκωδικοποίηση
-                        if self.started and not self.paused and t < self.clock() - 0.08:
-                            self.dropped += 1
-                            continue
-                    elif ts is not None and int(round((ts - st0) * tb * frate)) >= last + 32:
+                    if idx >= pos.last:
                         break
-                    for fr in cc.decode(pkt):
-                        if not emit(fr):
-                            return
-                for fr in cc.decode(None):  # άδειασμα decoder στο τέλος του reel
-                    if not emit(fr):
-                        return
+                    if self._late(pos.time(idx)):  # όλα intra: αν αργούμε, πετάμε πακέτα χωρίς αποκωδικοποίηση
+                        self.dropped += 1
+                        continue
+                elif ts is not None and pos.index(ts) >= pos.last + 32:
+                    break
+                for fr in cc.decode(pkt):
+                    if not self._emit(fr, pos, intra):
+                        return False
+            for fr in cc.decode(None):  # άδειασμα decoder στο τέλος του reel
+                if not self._emit(fr, pos, intra):
+                    return False
+        return True
+
+    def _emit(self, fr, pos, intra):
+        """Ένα αποκωδικοποιημένο καρέ στην ουρά (αν ανήκει στο reel και στο σωστό μάτι). False = τέλος."""
+        # ο decoder με threads βγάζει καρέ με καθυστέρηση: ο χρόνος παίρνεται από το ίδιο το καρέ
+        idx = pos.index(fr.pts) if fr.pts is not None else pos.next_counter()
+        if idx < pos.first or idx >= pos.last or (pos.mult == 2 and idx % 2 != self.eye):
+            return True
+        t = pos.time(idx)
+        if not intra and self._late(t):
+            self.dropped += 1  # inter codec: αποκωδικοποιείται αλλά δεν εμφανίζεται
+            return True
+        W, H = self.size_fn()
+        s = min(W / fr.width, H / fr.height)
+        w, h = max(2, int(fr.width * s) // 2 * 2), max(2, int(fr.height * s) // 2 * 2)
+        img = fr.reformat(width=w, height=h, format="rgb24")
+        return put(self.vq, (t, img.to_ndarray().tobytes(), w, h, fr.width, fr.height), self.stop)
 
     # --- ήχος
     def _audio_worker(self, sr, nch):
@@ -221,7 +240,6 @@ class Playback:
         put(self.audio.q, END, self.stop)
 
     def _audio_inner(self, sr, nch):
-        import av
         import numpy as np
 
         try:
@@ -247,51 +265,10 @@ class Playback:
             if reel.start + reel.seconds <= self.t0:
                 continue
             skip = max(0.0, self.t0 - reel.start)
-            need = int(round((reel.seconds - skip) * sr))  # δείγματα που πρέπει να βγουν
-            if not reel.snd:
-                silence(need)  # reel χωρίς ήχο
-                continue
-            start_s = float(reel.snd_entry / reel.snd_rate) + skip
-            with av.open(reel.snd) as c:
-                st = c.streams.audio[0]
-                a0 = float((st.start_time or 0) * st.time_base) if st.time_base else 0.0
-                if start_s > 0:
-                    try:
-                        c.seek(int(start_s / st.time_base) + (st.start_time or 0), stream=st, backward=True)
-                    except Exception:
-                        pass
-                start_sample = int(round(start_s * sr))
-                pos = None
-                for fr in c.decode(st):
-                    if self.stop.is_set() or need <= 0:
-                        break
-                    a = fr.to_ndarray()
-                    ch = fr.layout.nb_channels if hasattr(fr.layout, "nb_channels") else len(fr.layout.channels)
-                    a = a.T if fr.format.is_planar else a.reshape(-1, ch)
-                    if a.dtype == np.int32:
-                        a = a.astype(np.float32) / 2147483648.0
-                    elif a.dtype == np.int16:
-                        a = a.astype(np.float32) / 32768.0
-                    elif a.dtype == np.uint8:
-                        a = (a.astype(np.float32) - 128) / 128.0
-                    else:
-                        a = a.astype(np.float32)
-                    if ch != nch:  # ίδιος αριθμός καναλιών σε όλα τα reels
-                        b = np.zeros((len(a), nch), np.float32)
-                        k = min(ch, nch)
-                        b[:, :k] = a[:, :k]
-                        a = b
-                    if fr.time is not None:
-                        fs = int(round((fr.time - a0) * sr))
-                    else:
-                        fs = pos if pos is not None else start_sample
-                    pos = fs + len(a)
-                    if pos <= start_sample:
-                        continue
-                    if fs < start_sample:
-                        a = a[start_sample - fs:]
-                    a = a[:need]
-                    need -= len(a)
-                    if not send(np.ascontiguousarray(a)):
-                        return
+            need = int(round((reel.seconds - skip) * sr))  # δείγματα που πρέπει να βγουν (όσο η εικόνα)
+            # ίδιος αριθμός καναλιών σε όλα τα reels· reel χωρίς ήχο δεν δίνει τίποτα και γεμίζει με σιωπή
+            for a in reel_audio(reel, sr, skip, limit=reel.seconds - skip, channels=nch, stop=self.stop):
+                need -= len(a)
+                if not send(np.ascontiguousarray(a)):
+                    return
             silence(need)  # ήχος κοντύτερος από την εικόνα

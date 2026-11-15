@@ -2,7 +2,6 @@
 Πρόγραμμα προβολών: προβολές ανά μέρα / αίθουσα, λήξη με βάση τη διάρκεια της ταινίας, συγκρούσεις
 στην ίδια αίθουσα, και εξαγωγή HTML (για εκτύπωση) και CSV.
 """
-import csv
 import datetime
 import html
 import json
@@ -11,6 +10,7 @@ import uuid
 
 from app.core.config import APP_DIR, APP_NAME, APP_VERSION
 from app.core.i18n import tr, tr_html
+from app.core.util import write_excel_csv
 
 SCHEDULE_FILE = os.path.join(APP_DIR, "schedule.json")
 DATE_FMT, TIME_FMT = "%d/%m/%Y", "%H:%M"
@@ -66,8 +66,8 @@ def conflicts(screenings):
             continue
     for items in by_room.values():
         items.sort()
-        for i, (a1, b1, id1) in enumerate(items):
-            for a2, b2, id2 in items[i + 1:]:
+        for i, (_, b1, id1) in enumerate(items):
+            for a2, _, id2 in items[i + 1:]:
                 if a2 >= b1:
                     break
                 out.setdefault(id1, []).append(id2)
@@ -76,18 +76,17 @@ def conflicts(screenings):
 
 
 def write_csv(screenings, path, status_of=lambda s: ""):
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        f.write("sep=;\n")
-        w = csv.writer(f, delimiter=";")
-        w.writerow([tr(h) for h in ("Ημερομηνία", "Ώρα", "Λήξη", "Αίθουσα", "Ταινία", "Διάρκεια (λεπτά)",
-                                    "Επιπλέον (λεπτά)", "DCP", "Σημειώσεις")])
-        for s in sorted(screenings, key=sort_key):
-            try:
-                end = start_end(s)[1].strftime(TIME_FMT)
-            except ValueError:
-                end = "?"
-            w.writerow([s["date"], s["time"], end, s["room"], s["title"], f"{s['minutes']:.0f}", f"{s['extra']:.0f}",
-                        tr(status_of(s)), s["notes"]])
+    rows = []
+    for s in sorted(screenings, key=sort_key):
+        try:
+            end = start_end(s)[1].strftime(TIME_FMT)
+        except ValueError:
+            end = "?"
+        rows.append([s["date"], s["time"], end, s["room"], s["title"], f"{s['minutes']:.0f}", f"{s['extra']:.0f}",
+                     tr(status_of(s)), s["notes"]])
+    header = ("Ημερομηνία", "Ώρα", "Λήξη", "Αίθουσα", "Ταινία", "Διάρκεια (λεπτά)", "Επιπλέον (λεπτά)", "DCP",
+              "Σημειώσεις")
+    write_excel_csv(path, [tr(h) for h in header], rows)
 
 
 def write_html(screenings, path, status_of=lambda s: "", title="Πρόγραμμα προβολών"):

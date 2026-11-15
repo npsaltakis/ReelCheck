@@ -5,8 +5,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from app.core.config import APP_NAME, get_setting, set_setting
+from app.core import prefs
 from app.core.util import fmt_size
 from app.tools.ingest import list_dcps
+from app.ui.widgets import ask_folder, make_tree
 
 COLUMNS = (("name", "DCP", 420), ("size", "Μέγεθος", 90), ("cpl", "Τίτλοι", 300), ("note", "Σημείωση", 120))
 
@@ -35,10 +37,7 @@ class IngestWindow:
         ttk.Label(self.win, textvariable=self.found_var, padding=(10, 0)).pack(anchor="w")
         f = ttk.Frame(self.win, padding=(10, 6, 10, 0))
         f.pack(fill="both", expand=True)
-        self.tree = ttk.Treeview(f, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
-        for key, text, width in COLUMNS:
-            self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor="w", stretch=key in ("name", "cpl"))
+        self.tree = make_tree(f, COLUMNS, stretch=("name", "cpl"), selectmode="extended")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._update_space())
 
@@ -49,7 +48,7 @@ class IngestWindow:
         ttk.Checkbutton(o, text="Αντιγραφή στον φάκελο του φεστιβάλ με επαλήθευση (SHA-1)", variable=self.copy,
                         command=self._toggle_dest).grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(o, text="Φάκελος:").grid(row=1, column=0, sticky="w", padx=(20, 6))
-        self.dest = tk.StringVar(value=get_setting("ingest_dest", "") or "")
+        self.dest = tk.StringVar(value=prefs.folder("ingest_dest"))
         self.dest_entry = ttk.Entry(o, textvariable=self.dest, width=55)
         self.dest_entry.grid(row=1, column=1, sticky="w")
         self.dest_btn = ttk.Button(o, text="…", width=3, command=self.choose_dest)
@@ -81,15 +80,11 @@ class IngestWindow:
         self._update_space()
 
     def choose_src(self):
-        d = filedialog.askdirectory(parent=self.win, title="Ο δίσκος ή ο φάκελος με τα DCP")
-        if d:
-            self.src.set(os.path.normpath(d))
+        if ask_folder(self.win, "Ο δίσκος ή ο φάκελος με τα DCP", self.src):
             self.scan_source()
 
     def choose_dest(self):
-        d = filedialog.askdirectory(parent=self.win, title="Φάκελος του φεστιβάλ (εκεί θα αντιγραφούν)")
-        if d:
-            self.dest.set(os.path.normpath(d))
+        if ask_folder(self.win, "Φάκελος του φεστιβάλ (εκεί θα αντιγραφούν)", self.dest):
             self._update_space()
 
     def choose_catalog(self):

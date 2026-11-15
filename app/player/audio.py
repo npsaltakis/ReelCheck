@@ -1,6 +1,8 @@
 """Έξοδος ήχου (sounddevice) και downmix."""
 import queue
 
+from app.core.config import log
+
 END = object()  # τέλος ροής
 
 
@@ -34,29 +36,28 @@ def put(q, item, stop):
     return False
 
 
-def output_devices():
-    """Ονόματα συσκευών εξόδου ήχου, π.χ. «Speakers (Realtek) [Windows WASAPI]»."""
+def _outputs():
+    """[(δείκτης, όνομα)] των συσκευών εξόδου, π.χ. (5, «Speakers (Realtek) [Windows WASAPI]»)."""
     try:
         import sounddevice as sd
         apis = sd.query_hostapis()
-        return [f"{d['name']} [{apis[d['hostapi']]['name']}]" for d in sd.query_devices() if d["max_output_channels"] > 0]
-    except Exception:
+        return [(i, f"{d['name']} [{apis[d['hostapi']]['name']}]") for i, d in enumerate(sd.query_devices())
+                if d["max_output_channels"] > 0]
+    except Exception:  # χωρίς κάρτα ήχου / χαλασμένος driver: η αναπαραγωγή συνεχίζει χωρίς ήχο
+        log.exception("Λίστα συσκευών ήχου")
         return []
+
+
+def output_devices():
+    """Ονόματα συσκευών εξόδου ήχου (για τις Ρυθμίσεις)."""
+    return [name for _i, name in _outputs()]
 
 
 def device_index(label):
     """Δείκτης συσκευής από το όνομα των Ρυθμίσεων· None αν είναι κενό ή δεν υπάρχει πια (π.χ. αποσυνδέθηκε)."""
     if not label:
         return None
-    try:
-        import sounddevice as sd
-        apis = sd.query_hostapis()
-        for i, d in enumerate(sd.query_devices()):
-            if d["max_output_channels"] > 0 and f"{d['name']} [{apis[d['hostapi']]['name']}]" == label:
-                return i
-    except Exception:
-        pass
-    return None
+    return next((i for i, name in _outputs() if name == label), None)
 
 
 class AudioOut:
