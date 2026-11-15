@@ -1,5 +1,9 @@
-"""Φτιάχνει το icon.ico (κλακέτα/film με κουμπί play). Χρειάζεται Pillow."""
+"""Φτιάχνει το assets/icon.ico και assets/icon.png (κλακέτα/film με κουμπί play). Χρειάζεται Pillow."""
+import os
+
 from PIL import Image, ImageDraw
+
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 
 S = 1024
 img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -19,6 +23,6 @@ d.polygon([(cx - 60, cy - 100), (cx - 60, cy + 100), (cx + 110, cy)], fill=(28, 
 mask = Image.new("L", (S, S), 0)
 ImageDraw.Draw(mask).rounded_rectangle((40, 40, S - 40, S - 40), radius=200, fill=255)
 img.putalpha(mask)
-img.save("icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-img.resize((256, 256), Image.LANCZOS).save("icon.png")
+img.save(os.path.join(OUT, "icon.ico"), sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+img.resize((256, 256), Image.LANCZOS).save(os.path.join(OUT, "icon.png"))
 print("ok")
