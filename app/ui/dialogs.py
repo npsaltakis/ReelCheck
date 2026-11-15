@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from app.checks.spec import AUDIO_CHOICES, set_spec
+from app.ui.i18n_tk import label_key
 from app.core.config import APP_NAME
 
 
@@ -77,12 +78,40 @@ class SpecDialog:
             return
         spec = {"enabled": bool(self.enabled.get()), "res": [k for k, v in self.res.items() if v.get()],
                 "std": [k for k, v in self.std.items() if v.get()], "fps": fps,
-                "audio": next(k for k, v in AUDIO_CHOICES.items() if v == self.audio.get()),
+                "audio": label_key(self.audio, AUDIO_CHOICES),
                 "sub_lang": self.sub_lang.get().strip().upper(), "max_minutes": mx,
                 "no_encrypted": bool(self.no_enc.get()), "no_3d": bool(self.no_3d.get())}
         set_spec(spec)
         self.win.destroy()
         self.on_save(spec)
+
+
+class LanguageDialog:
+    """Επιλογή γλώσσας (αυτόματα / ελληνικά / αγγλικά). on_change(lang) καλείται αν άλλαξε."""
+
+    def __init__(self, parent, theme, current, on_change):
+        from app.core.i18n import LANGS
+        self.win = w = tk.Toplevel(parent)
+        w.title("Γλώσσα / Language")
+        theme.toplevel(w, parent)
+        f = ttk.Frame(w, padding=16)
+        f.pack(fill="both", expand=True)
+        self.var = tk.StringVar(value=current)
+        for key, text in LANGS.items():
+            ttk.Radiobutton(f, text=text if key != "en" else "English", value=key, variable=self.var).pack(
+                anchor="w", pady=2)
+
+        def ok():
+            lang = self.var.get()
+            w.destroy()
+            if lang != current:
+                on_change(lang)
+
+        bf = ttk.Frame(f)
+        bf.pack(fill="x", pady=(12, 0))
+        ttk.Button(bf, text="OK", command=ok).pack(side="right")
+        ttk.Button(bf, text="Άκυρο", command=w.destroy).pack(side="right", padx=6)
+        w.grab_set()
 
 
 def write_table_csv(path, header, rows):

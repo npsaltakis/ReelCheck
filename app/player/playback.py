@@ -12,6 +12,43 @@ from app.player.audio import AudioOut, END, put
 INTRA_CODECS = {"jpeg2000", "prores", "dnxhd", "mjpeg", "ffv1", "huffyuv", "cfhd", "rawvideo", "v210", "png", "tiff"}
 
 
+class LoudnessTrack:
+    """
+    Ζωντανή ένταση (LUFS) για την αναπαραγωγή. Μετριέται στο thread του ήχου, που τρέχει λίγο μπροστά
+    από ό,τι ακούγεται, οπότε κρατάμε ιστορικό (χρόνος, momentary, short-term) και δείχνουμε την τιμή
+    της στιγμής που ακούγεται.
+    """
+
+    MAX_HISTORY = 20000
+
+    def __init__(self, t0, sr, nch):
+        from app.checks.loudness import LoudnessMeter
+        self.meter = LoudnessMeter(6 if nch >= 6 else nch, sr)
+        self.t0, self.sr, self.done = t0, sr, 0
+        self.times, self.values = [], []
+
+    def add(self, a):
+        self.meter.add(a)
+        self.done += len(a)
+        if len(self.times) > self.MAX_HISTORY:
+            del self.times[:self.MAX_HISTORY // 2]
+            del self.values[:self.MAX_HISTORY // 2]
+        self.values.append((self.meter.momentary, self.meter.short_term))
+        self.times.append(self.t0 + self.done / self.sr)
+
+    def at(self, t):
+        """(momentary, short-term) τη στιγμή t, ή (None, None)."""
+        import bisect
+        i = bisect.bisect_left(self.times, t)
+        if i >= len(self.values):
+            i = len(self.values) - 1
+        return self.values[i] if i >= 0 else (None, None)
+
+    @property
+    def integrated(self):
+        return self.meter.result()["integrated"]
+
+
 class Playback:
     """Μία «διαδρομή» αναπαραγωγής από τη στιγμή t0. Για seek φτιάχνεται καινούρια."""
 
@@ -25,6 +62,7 @@ class Playback:
         self.error = None
         self.dropped = 0
         self.want_pause = False
+        self.loudness = None  # LoudnessTrack, όταν ξεκινήσει ο ήχος
         sr, nch = 48000, 2
         if want_audio:
             try:
@@ -184,10 +222,21 @@ class Playback:
         import av
         import numpy as np
 
+        try:
+            self.loudness = LoudnessTrack(self.t0, sr, nch)
+        except Exception:
+            log.exception("Μετρητής LUFS")
+            self.loudness = None
+
+        def send(a):
+            if self.loudness is not None:
+                self.loudness.add(a)
+            return put(self.audio.q, a, self.stop)
+
         def silence(n):
             while n > 0 and not self.stop.is_set():
                 k = min(n, 4800)
-                put(self.audio.q, np.zeros((k, nch), np.float32), self.stop)
+                send(np.zeros((k, nch), np.float32))
                 n -= k
 
         for reel in self.cpl.reels:
@@ -241,6 +290,6 @@ class Playback:
                         a = a[start_sample - fs:]
                     a = a[:need]
                     need -= len(a)
-                    if not put(self.audio.q, np.ascontiguousarray(a), self.stop):
+                    if not send(np.ascontiguousarray(a)):
                         return
             silence(need)  # ήχος κοντύτερος από την εικόνα

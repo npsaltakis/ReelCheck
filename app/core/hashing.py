@@ -22,6 +22,16 @@ def _hash_cache():
         return {}
 
 
+def cache_key(path):
+    """Κλειδί cache: διαδρομή, μέγεθος, ώρα τροποποίησης (αν αλλάξει το αρχείο, ξαναϋπολογίζεται)."""
+    return f"{os.path.abspath(path)}|{os.path.getsize(path)}|{int(os.path.getmtime(path))}"
+
+
+def remember_hash(path, sha1_b64):
+    """Αποθήκευση hash που υπολογίστηκε αλλού (π.χ. στην αντιγραφή), ώστε ο έλεγχος να είναι άμεσος."""
+    _hash_cache_put(cache_key(path), sha1_b64)
+
+
 def _hash_cache_put(key, value):
     with _hash_lock:
         c = _hash_cache()
@@ -69,7 +79,7 @@ def verify_cpl(cpl, progress=None, cancel=None):
     done = 0
     cache = _hash_cache()
     for r, f, want, size in todo:
-        key = f"{os.path.abspath(f)}|{size}|{int(os.path.getmtime(f))}"
+        key = cache_key(f)
         got = cache.get(key)
         if got is None:
             h = hashlib.sha1()

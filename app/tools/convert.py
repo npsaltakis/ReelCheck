@@ -10,7 +10,10 @@ import time
 from app.core.config import log
 from app.core.hashing import Cancelled
 from app.tools import dcpomatic
+from app.checks.loudness import measure_file
+from app.core.subtitles import parse_srt
 from app.tools.mediainfo import audio_level, equalize_gains
+from app.tools.subcheck import check_entries, summary
 
 WORK_DIR_NAME = "_ReelCheck_work"  # μόνο λατινικά: το DCP-o-matic δεν γράφει σε διαδρομές με ελληνικά
 DEFAULT_OPTS = {"mode": "single", "name": "Program", "kind": "SHR", "ratio": "185", "standard": "SMPTE",
@@ -65,6 +68,23 @@ def warnings_for(infos, opts):
     silent = [os.path.basename(i["path"]) for i in infos if not i.get("channels") and not i.get("error")]
     if silent:
         out.append("Χωρίς ήχο: " + ", ".join(silent))
+    out += srt_warnings(infos)
+    return out
+
+
+def srt_warnings(infos):
+    """Προβλήματα στα .srt που θα μπουν (επικαλύψεις, γρήγοροι υπότιτλοι, μετά το τέλος κ.λπ.)."""
+    out = []
+    for i in infos:
+        if not i.get("srt") or i.get("error"):
+            continue
+        try:
+            problems = [p for p in check_entries(parse_srt(i["srt"]), i.get("duration") or None) if p[1] == "warn"]
+        except Exception:
+            out.append(f"Δεν διαβάζεται: {os.path.basename(i['srt'])}")
+            continue
+        if problems:
+            out.append(f"{os.path.basename(i['srt'])}: {summary(problems)} (Εργαλεία → Έλεγχος υποτίτλων)")
     return out
 
 
@@ -141,6 +161,21 @@ def convert(infos, opts, out_dir, progress=None, cancel=None):
     return results
 
 
+def _loudness(info, cancel):
+    """(ένταση LUFS, true peak dBTP) για την εξίσωση· αν το LUFS αποτύχει, μέση στάθμη RMS και κορυφή."""
+    if not info.get("channels"):
+        return None, None
+    try:
+        r = measure_file(info["path"], cancel)
+        if r and r["integrated"] is not None:
+            return r["integrated"], r["true_peak"]
+    except Cancelled:
+        raise
+    except Exception:
+        log.exception("Μέτρηση LUFS %s", info["path"])
+    return audio_level(info["path"], cancel)
+
+
 def _gains(infos, opts, prog, cancel):
     if not opts["normalize"] or len(infos) < 2:
         return [0.0] * len(infos)
@@ -149,7 +184,7 @@ def _gains(infos, opts, prog, cancel):
     levels = []
     for k, i in enumerate(infos):
         p(k / len(infos), os.path.basename(i["path"])[:40])
-        levels.append(audio_level(i["path"], cancel) if i.get("channels") else (None, None))
+        levels.append(_loudness(i, cancel))
     gains = equalize_gains(levels)
     log.info("Εξίσωση έντασης: %s", list(zip([os.path.basename(i["path"]) for i in infos], levels, gains)))
     return gains

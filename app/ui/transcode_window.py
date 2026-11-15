@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from app.ui.i18n_tk import label_key
 from app.core.config import APP_NAME, VIDEO_EXT, get_setting, set_setting
 from app.core.util import fmt_time
 from app.tools.mediainfo import find_srt
@@ -147,7 +148,7 @@ class TranscodeWindow:
     @staticmethod
     def _key(var_labels):
         var, labels = var_labels
-        return next((k for k, v in labels.items() if v == var.get()), list(labels)[0])
+        return label_key(var, labels)
 
     def options(self):
         return {"preset": self._key(self.preset), "quality": self._key(self.quality), "max_h": self._key(self.size),

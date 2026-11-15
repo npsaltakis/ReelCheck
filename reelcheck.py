@@ -56,6 +56,7 @@ def parse_args():
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--autoexit", action="store_true", help="κλείσιμο στο τέλος (λίστα προβολής)")
     ap.add_argument("--center", help="x,y: κέντρο του παραθύρου (για να ανοίξει στην ίδια οθόνη)")
+    ap.add_argument("--linux-disk", action="store_true", help="άνοιγμα με το παράθυρο «Δίσκος Linux»")
     return ap.parse_args()
 
 
@@ -90,7 +91,7 @@ def main():
             return
         f = os.path.dirname(f)  # σύρθηκε αρχείο του DCP (π.χ. CPL)
     from app.ui.launcher import launcher
-    launcher(f)
+    launcher(f, open_linux=a.linux_disk)
 
 
 if __name__ == "__main__":

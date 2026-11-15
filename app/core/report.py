@@ -5,6 +5,7 @@ import datetime
 import html
 
 from app.core.config import APP_NAME, APP_VERSION, log
+from app.core.i18n import tr, tr_html
 from app.core.hashing import hash_summary
 from app.core.subtitles import track_summary
 from app.core.util import fmt_time
@@ -69,9 +70,10 @@ def write_csv(items, path):
     rows = [item_row(i) for i in items]
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         f.write("sep=;\n")  # για να το ανοίγει σωστά το ελληνικό Excel
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["Τίτλος"], delimiter=";")
-        w.writeheader()
-        w.writerows(rows)
+        header = list(rows[0].keys()) if rows else ["Τίτλος"]
+        w = csv.writer(f, delimiter=";")
+        w.writerow([tr(h) for h in header])
+        w.writerows([[tr(str(r[h])) for h in header] for r in rows])
     log.info("CSV: %s (%d ταινίες)", path, len(rows))
 
 
@@ -149,5 +151,5 @@ def write_report(items, path):
         out.append("</div>")
     out.append(f"<p class='small'>{APP_NAME} v{APP_VERSION}</p></body></html>")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(out))
+        f.write(tr_html("\n".join(out)))  # στα αγγλικά μεταφράζεται το κείμενο (όχι οι τίτλοι ταινιών)
     log.info("Αναφορά: %s (%d ταινίες)", path, len(rows))

@@ -1,6 +1,7 @@
 """Παράθυρο επιλογής: λίστα ταινιών, λεπτομέρειες, έλεγχοι και εργαλεία."""
 import os
 import re
+import shutil
 import threading
 import time
 import tkinter as tk
@@ -20,19 +21,25 @@ from app.core.media import probe, thumbnail
 from app.core.notes import load_notes
 from app.core.report import item_row, status_of, write_csv, write_report
 from app.core.subtitles import track_summary
-from app.core.util import fmt_time
+from app.core.util import fmt_size, fmt_time
 from app.tools.catalog import catalog_table, read_catalog
 from app.tools.convert import convert
 from app.tools.copier import copy_verify, dcp_folders_for, write_copy_report
+from app.tools.ingest import report_path
 from app.tools.dcpomatic import DOWNLOAD_PAGE, find_dcpomatic, find_downloaded_installer, install
 from app.tools.playlist import playlist_order
 from app.tools.transcode import gpu_name, output_path, transcode_dcp, transcode_file
 from app.tools.update import can_self_update, check_update, download_update, install_update
 from app.ui.convert_window import ConvertWindow
+from app.ui.ingest_window import IngestWindow
+from app.ui.linux_disk_window import LinuxDiskWindow
+from app.ui.schedule_window import ScheduleWindow
+from app.ui.subtitle_window import SubtitleWindow
 from app.ui.transcode_window import TranscodeWindow, dcp_item
-from app.ui.dialogs import CatalogWindow, SpecDialog
+from app.ui.dialogs import CatalogWindow, LanguageDialog, SpecDialog
+from app.ui.i18n_tk import install as install_translation
 from app.ui.jobs import JobRunner
-from app.ui.spawn import player_command, start_player
+from app.ui.spawn import player_command, relaunch, relaunch_as_admin, start_player
 from app.ui.theme import MODE_LABELS, Theme, window_center
 from app.ui.winutil import point_on_screen
 
@@ -41,7 +48,28 @@ WIDTHS = (80, 300, 85, 85, 85, 160, 80, 100, 80)
 LAST_FOLDER_FILE = os.path.join(APP_DIR, "last_folder.txt")
 ISSUE_ICON = {"err": "✖", "warn": "⚠", "info": "ℹ"}
 DEFAULT_GEOMETRY = "1150x680"
+TIME_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})(?::\d{2})?")
+JUMP_PREROLL = 3  # δευτ. πριν από το εύρημα, για να φαίνεται τι προηγείται
 GEOMETRY_RE = re.compile(r"(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)")
+
+
+def unique_targets(dest, paths):
+    """
+    Φάκελοι προορισμού για DCP από δίσκο Linux. Αν δύο έχουν το ίδιο όνομα (σε άλλους φακέλους του δίσκου),
+    στο δεύτερο μπαίνει και ο γονικός φάκελος, ώστε να μην ανακατευτούν.
+    """
+    out, used = [], set()
+    for p in paths:
+        parts = p.strip("/").split("/")
+        name = parts[-1]
+        if name.lower() in used or os.path.exists(os.path.join(dest, name)):
+            name = f"{parts[-1]} ({parts[-2] if len(parts) > 1 else 'δίσκος'})"
+        n, base = 2, name
+        while name.lower() in used:
+            name, n = f"{base} {n}", n + 1
+        used.add(name.lower())
+        out.append(os.path.join(dest, name))
+    return out
 
 
 def new_item(cpl):
@@ -81,7 +109,7 @@ def saved_geometry():
 
 
 class LauncherWindow:
-    def __init__(self, initial=None):
+    def __init__(self, initial=None, open_linux=False):
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
         self._requested_geometry = saved_geometry() or DEFAULT_GEOMETRY
@@ -123,12 +151,15 @@ class LauncherWindow:
             self.root.after(150, lambda: self.load(start))
         if not os.environ.get("DCP_LAUNCHER_SHOT"):
             self.root.after(3000, self.update_check)
+        if open_linux:  # ξεκίνησε ως διαχειριστής για δίσκο Linux
+            self.root.after(800, self.open_linux_disk)
 
     # ================================================================== κατασκευή
     def _build_top(self):
         top = ttk.Frame(self.root, padding=8)
         top.pack(fill="x")
         ttk.Button(top, text="Άνοιγμα φακέλου DCP…", command=self.choose_folder).pack(side="left")
+        ttk.Button(top, text="Παραλαβή DCP…", command=self.open_ingest).pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Άνοιγμα βίντεο…", command=self.open_video).pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Βίντεο → DCP…", command=self.open_convert).pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Μετατροπή βίντεο…", command=self.open_transcode).pack(side="left", padx=(6, 0))
@@ -182,9 +213,15 @@ class LauncherWindow:
     def _build_menu(self):
         menubar = tk.Menu(self.root)
         tools = tk.Menu(menubar, tearoff=0)
+        tools.add_command(label="Παραλαβή DCP από δίσκο (αντιγραφή, έλεγχοι, αναφορά)…", command=self.open_ingest)
+        tools.add_command(label="Δίσκος Linux (ext2/3/4) που δεν ανοίγει στα Windows…", command=self.open_linux_disk)
+        tools.add_command(label="Πρόγραμμα προβολών…", command=self.open_schedule)
+        tools.add_separator()
         tools.add_command(label="Μετατροπή βίντεο (MP4 κ.λπ.) σε DCP…", command=self.open_convert)
         tools.add_command(label="Μετατροπή βίντεο (π.χ. MOV → MP4)…", command=self.open_transcode)
         tools.add_command(label="Εξαγωγή επιλεγμένων DCP σε MP4 (screener)…", command=self.export_dcp_mp4)
+        tools.add_command(label="Έλεγχος υποτίτλων .srt (και διόρθωση χρόνων)…",
+                          command=lambda: SubtitleWindow(self.root, self.theme))
         tools.add_separator()
         tools.add_command(label="Προδιαγραφές φεστιβάλ…", command=self.edit_spec)
         tools.add_command(label="Σάρωση επιλεγμένων (μαύρο, σιωπή, ήχος, υπότιτλοι)",
@@ -197,6 +234,7 @@ class LauncherWindow:
         tools.add_command(label="Φόρτωση KDM…", command=self.load_kdm)
         tools.add_separator()
         tools.add_command(label="Έλεγχος για νέα έκδοση / αναβάθμιση", command=lambda: self.update_check(manual=True))
+        tools.add_command(label="Γλώσσα / Language…", command=self.choose_language)
         menubar.add_cascade(label="Εργαλεία", menu=tools)
         self.root.config(menu=menubar)
 
@@ -205,11 +243,15 @@ class LauncherWindow:
         self.tree.bind("<<TreeviewSelect>>", self.show_details)
         self.tree.bind("<Double-Button-1>", lambda e: self.play_selected())
         self.tree.bind("<Return>", lambda e: self.play_selected())
+        self.info.tag_bind("jump", "<Button-1>", self._on_time_click)
+        self.info.tag_bind("jump", "<Enter>", lambda e: self.info.configure(cursor="hand2"))
+        self.info.tag_bind("jump", "<Leave>", lambda e: self.info.configure(cursor="xterm"))
 
     # ================================================================== θέμα
     def apply_theme(self):
         self.theme.apply_ttk()
         self.theme.style_text(self.info)
+        self.info.tag_configure("jump", foreground=self.theme.palette["accent"], underline=True)
         self.theme.tag_tree(self.tree)
         self.theme_btn.configure(text=MODE_LABELS[self.theme.mode])
 
@@ -359,7 +401,31 @@ class LauncherWindow:
                  + self._detail_notes(it) + [f"\nCPL: {it['cpl'].path}"])
         self.info.delete("1.0", "end")
         self.info.insert("end", "\n".join(lines))
+        if not it["cpl"].encrypted:
+            self._link_times(lines)
         self.play_btn.state(["disabled"] if it["cpl"].encrypted else ["!disabled"])
+
+    def _link_times(self, lines):
+        """Οι χρόνοι στα ευρήματα και στις σημειώσεις γίνονται links: κλικ = αναπαραγωγή από εκεί."""
+        for n, line in enumerate("\n".join(lines).split("\n"), 1):
+            if not line.startswith("  "):  # μόνο γραμμές ευρημάτων / σημειώσεων, όχι η διάρκεια
+                continue
+            for m in TIME_RE.finditer(line):
+                self.info.tag_add("jump", f"{n}.{m.start()}", f"{n}.{m.end()}")
+
+    def _on_time_click(self, event):
+        idx = self.info.index(f"@{event.x},{event.y}")
+        rng = self.info.tag_prevrange("jump", f"{idx}+1c")
+        if not rng:
+            return
+        m = TIME_RE.fullmatch(self.info.get(*rng))
+        sel = self.selected()
+        if not m or not sel:
+            return
+        h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        start = max(0, h * 3600 + mi * 60 + s - JUMP_PREROLL)
+        log.info("Αναπαραγωγή από εύρημα: %s", self.info.get(*rng))
+        self.spawn_player(self.items[sel[0]]["cpl"].path, sel[0], extra_args=["--start", str(start)])
 
     def _detail_header(self, it):
         c, inf = it["cpl"], it["info"] or {}
@@ -386,7 +452,7 @@ class LauncherWindow:
         c, lines = it["cpl"], []
         iss = it.get("issues") or []
         if iss:
-            lines.append("\nΕΛΕΓΧΟΙ:")
+            lines.append("\nΕΛΕΓΧΟΙ:  (κλικ σε χρόνο = αναπαραγωγή από εκεί)")
             lines += [f"  {ISSUE_ICON.get(lv, '·')} {t}" for lv, t in iss]
         if it.get("scan"):
             lines.append(f"  (σάρωση: {it['scan'].get('date', '?')})")
@@ -726,6 +792,133 @@ class LauncherWindow:
         elif not folder:
             self.info_box(msg)
 
+    # ------------------------------------------------------------------ γλώσσα
+    def choose_language(self):
+        def changed(lang):
+            set_setting("language", lang)
+            if messagebox.askyesno(APP_NAME, "Η γλώσσα αλλάζει στην επόμενη εκκίνηση. Να ξεκινήσει ξανά το ReelCheck τώρα;\n\n"
+                                             "The language changes on the next start. Restart ReelCheck now?",
+                                   parent=self.root):
+                if relaunch(self.path_var.get() or None):
+                    self.close()
+        LanguageDialog(self.root, self.theme, get_setting("language", "el"), changed)
+
+    # ------------------------------------------------------------------ δίσκος Linux
+    def open_linux_disk(self):
+        LinuxDiskWindow(self.root, self.theme, self.copy_from_linux, relaunch_as_admin)
+
+    def copy_from_linux(self, fs, handle, paths, dest, scan):
+        sizes = {p: s for p, s, _n in fs.find_dcps()}
+        need = sum(sizes.get(p, 0) for p in paths)
+        os.makedirs(dest, exist_ok=True)
+        free = shutil.disk_usage(dest).free
+        if need > free:
+            handle.close()
+            messagebox.showerror(APP_NAME, f"Δεν χωράει: χρειάζονται {fmt_size(need)}, ελεύθερα {fmt_size(free)}.")
+            return
+        targets = unique_targets(dest, paths)
+        log.info("Αντιγραφή από δίσκο Linux (%s): %s -> %s", fs.version, paths, dest)
+
+        def job(progress, cancel):
+            try:
+                done = 0
+                for p, target in zip(paths, targets):
+                    span = sizes.get(p, 1) or 1
+
+                    def prog(frac, msg, done=done, span=span):
+                        progress((done + span * frac) / max(1, need), msg)
+                    fs.copy_tree(p, target, prog, cancel)
+                    done += span
+            finally:
+                handle.close()
+            self.jobs.call_in_gui(lambda: self.when_idle(
+                lambda: self._ingest_check(targets, dest, {"scan": scan}, None)))
+
+        self.start_job("Αντιγραφή από δίσκο Linux", job)
+
+    # ------------------------------------------------------------------ πρόγραμμα προβολών
+    def open_schedule(self):
+        def films():
+            return [(it["cpl"].title, it["cpl"].id, it["cpl"].seconds / 60) for it in self.items
+                    if not it["cpl"].is_file]
+
+        def status_of(cpl_id):
+            it = next((x for x in self.items if x["cpl"].id == cpl_id), None)
+            return item_row(it)["Κατάσταση"] if it else ""
+
+        ScheduleWindow(self.root, self.theme, films, status_of)
+
+    # ------------------------------------------------------------------ παραλαβή DCP
+    def open_ingest(self):
+        IngestWindow(self.root, self.theme, self.run_ingest)
+
+    def run_ingest(self, folders, dest, opts):
+        """Αντιγραφή με επαλήθευση (αν ζητήθηκε) → φόρτωση → hash + σάρωση → κατάλογος → αναφορά."""
+        log.info("Παραλαβή: %d DCP -> %s %s", len(folders), dest or "(έλεγχος στη θέση τους)", opts)
+        if dest:
+            self.start_job("Παραλαβή: αντιγραφή", lambda p, c: self._ingest_copy(folders, dest, opts, p, c))
+        else:
+            root = os.path.commonpath(folders) if len(folders) > 1 else os.path.dirname(folders[0])
+            self._ingest_check(folders, root, opts, None)
+
+    def _ingest_copy(self, folders, dest, opts, progress, cancel):
+        res = copy_verify(folders, dest, progress, cancel)
+        write_copy_report(res, dest)
+        targets = [os.path.join(dest, os.path.basename(os.path.normpath(f))) for f in folders]
+        self.jobs.call_in_gui(lambda: self.when_idle(lambda: self._ingest_check(targets, dest, opts, res)))
+
+    def _ingest_check(self, targets, root, opts, copy_res):
+        self.load(root)
+        wanted = {os.path.normcase(os.path.abspath(t)) for t in targets}
+
+        def checks():
+            idx = [i for i, it in enumerate(self.items)
+                   if os.path.normcase(os.path.abspath(it["cpl"].folder)) in wanted]
+
+            def work(i, p, cancel):
+                it = self.items[i]
+                if it["cpl"].encrypted:
+                    return
+                it["hash"] = verify_cpl(it["cpl"], lambda d, t, n: p(0.2 * d / max(1, t), f"hash {n[:30]}"), cancel)
+                if opts.get("scan"):
+                    it["scan"] = scan_cpl(it["cpl"], lambda f, m: p(0.2 + 0.8 * f, m), cancel)
+
+            self.tree.selection_set([str(i) for i in idx])
+            self.start_job("Παραλαβή: έλεγχοι", self._per_item_job(idx, "Έλεγχος", work))
+            self.when_idle(lambda: self._ingest_finish(idx, root, opts, copy_res))
+
+        self.when_idle(checks)
+
+    def _ingest_finish(self, idx, root, opts, copy_res):
+        items = [self.items[i] for i in idx]
+        rows = [item_row(it) for it in items]
+        counts = {k: sum(r["Κατάσταση"] == k for r in rows) for k in ("OK", "ΠΡΟΣΟΧΗ", "ΣΦΑΛΜΑ")}
+        rep = report_path(root)
+        try:
+            write_report(items, rep)
+        except OSError:  # π.χ. δίσκος μόνο για ανάγνωση: η αναφορά πάει στα Έγγραφα
+            rep = os.path.join(os.path.expanduser("~"), "Documents", os.path.basename(rep))
+            write_report(items, rep)
+        bad_copy = [r for r in copy_res or [] if r["status"] != "OK"]
+        lines = [f"Παραλαβή: {len(items)} CPL · {counts['OK']} OK · {counts['ΠΡΟΣΟΧΗ']} προσοχή · "
+                 f"{counts['ΣΦΑΛΜΑ']} σφάλμα"]
+        if copy_res is not None:
+            lines.append(f"Αντιγραφή: {len(copy_res)} αρχεία, " +
+                         ("όλα σωστά" if not bad_copy else f"{len(bad_copy)} ΜΕ ΛΑΘΟΣ"))
+        lines += [f"  {r['Κατάσταση']:<8} {r['Τίτλος']}" for r in rows]
+        if opts.get("catalog"):
+            try:
+                table, summary = catalog_table(read_catalog(opts["catalog"]), self.items,
+                                               lambda i: item_row(self.items[i])["Κατάσταση"])
+                lines.append(f"Κατάλογος: {summary}")
+                CatalogWindow(self.root, self.theme, os.path.basename(opts["catalog"]), summary, table)
+            except Exception as e:
+                log.exception("Κατάλογος στην παραλαβή")
+                lines.append(f"Κατάλογος: δεν διαβάστηκε ({e})")
+        lines.append(f"\nΑναφορά: {rep}\n\nΆνοιγμα της αναφοράς;")
+        if messagebox.askyesno(APP_NAME, "\n".join(lines), parent=self.root):
+            os.startfile(rep)
+
     def edit_spec(self):
         def saved(spec):
             self.spec = spec
@@ -922,5 +1115,6 @@ class LauncherWindow:
         r.destroy()
 
 
-def launcher(initial=None):
-    LauncherWindow(initial).run()
+def launcher(initial=None, open_linux=False):
+    install_translation()  # αγγλικά: μετάφραση ό,τι εμφανίζεται (στα ελληνικά δεν κάνει τίποτα)
+    LauncherWindow(initial, open_linux).run()

@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from app.ui.i18n_tk import label_key
 from app.core.config import APP_NAME, VIDEO_EXT, get_setting, set_setting
 from app.core.util import fmt_time
 from app.tools.convert import DEFAULT_OPTS, warnings_for
@@ -179,7 +180,7 @@ class ConvertWindow:
     def options(self):
         def key(var_labels):
             var, labels = var_labels
-            return next((k for k, v in labels.items() if v == var.get()), list(labels)[0])
+            return label_key(var, labels)
         try:
             gap = max(0.0, float(self.gap.get().replace(",", ".") or 0))
         except ValueError:

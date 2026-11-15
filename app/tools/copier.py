@@ -6,8 +6,9 @@ import os
 import shutil
 
 from app.core.config import APP_NAME, APP_VERSION, log
+from app.core.i18n import tr
 from app.core.dcp import read_assetmap, read_pkls
-from app.core.hashing import Cancelled
+from app.core.hashing import Cancelled, remember_hash
 from app.core.util import fmt_size
 
 
@@ -87,6 +88,7 @@ def copy_verify(folders, dest, progress=None, cancel=None):
                 pass
             copied = True
         got = stream_hash(d, "Επαλήθευση")
+        remember_hash(d, got)  # ο έλεγχος hash του αντιγράφου μετά δεν ξαναδιαβάζει το αρχείο
         ref = (want or "").strip() or src_hash
         if not ref:  # υπήρχε ήδη και δεν είναι στο PKL: σύγκριση με το πρωτότυπο
             done[0] -= size
@@ -102,12 +104,12 @@ def copy_verify(folders, dest, progress=None, cancel=None):
 
 def write_copy_report(results, dest):
     """Αρχείο κειμένου με το αποτέλεσμα μέσα στον προορισμό. Επιστρέφει τη διαδρομή ή None."""
-    rep = os.path.join(dest, f"ReelCheck_αντιγραφή_{datetime.datetime.now():%Y%m%d_%H%M}.txt")
+    rep = os.path.join(dest, f"ReelCheck_{tr('αντιγραφή')}_{datetime.datetime.now():%Y%m%d_%H%M}.txt")
     try:
         with open(rep, "w", encoding="utf-8") as fh:
-            fh.write(f"{APP_NAME} v{APP_VERSION}: αντιγραφή με επαλήθευση\n\n")
+            fh.write(tr(f"{APP_NAME} v{APP_VERSION}: αντιγραφή με επαλήθευση") + "\n\n")
             for r in results:
-                fh.write(f"{r['status']:<6} {r['file']}  ({fmt_size(r['size'])}, {r['detail']})\n")
+                fh.write(f"{tr(r['status']):<6} {r['file']}  ({fmt_size(r['size'])}, {tr(r['detail'])})\n")
         return rep
     except OSError:
         return None

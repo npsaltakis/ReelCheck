@@ -1,0 +1,64 @@
+# Τεστ και χτίσιμο του ReelCheck.exe σε κάθε push, και ανέβασμα του exe σε κάθε release.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Βιβλιοθήκες
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Τεστ
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -X utf8 -m unittest discover -s tests -t . -v
+
+      - name: Χτίσιμο exe
+        shell: cmd
+        run: >
+          python -m PyInstaller --noconfirm --onefile --windowed --name ReelCheck
+          --collect-all av --hidden-import pyexpat --hidden-import _tkinter --collect-submodules app
+          --icon assets\icon.ico --add-data "assets\icon.ico;assets" --add-data "assets\icon.png;assets"
+          reelcheck.py
+
+      - name: Αυτοέλεγχος exe
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP\selftest.txt"
+          $env:DCP_SELFTEST = $out
+          Start-Process -Wait dist\ReelCheck.exe
+          Get-Content $out -Encoding UTF8
+          # ο runner δεν έχει κάρτα ήχου: το sounddevice επιτρέπεται να αποτύχει
+          $bad = Get-Content $out -Encoding UTF8 | Where-Object { $_ -match 'FAIL' -and $_ -notmatch '^sounddevice' }
+          if ($bad) { Write-Error "Αποτυχία αυτοελέγχου: $bad"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReelCheck-exe
+          path: dist/ReelCheck.exe
+
+      - name: Ανέβασμα στο release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/ReelCheck.exe --clobber

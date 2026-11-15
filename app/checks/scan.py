@@ -5,10 +5,12 @@ import math
 import os
 from fractions import Fraction
 
+from app.checks.loudness import LoudnessMeter, describe as describe_loudness
 from app.core.config import APP_DIR, CH_NAMES, log
 from app.core.hashing import Cancelled
 from app.core.subtitles import load_tracks
 from app.core.util import fmt_time
+from app.tools.subcheck import check_entries, summary as subs_summary
 
 
 SCANS_DIR = os.path.join(APP_DIR, "scans")
@@ -98,7 +100,7 @@ def scan_cpl(cpl, progress=None, cancel=None):
 
     # --- ήχος
     peaks, clip, sec_rms, nch, sr = None, None, [], 0, 48000
-    sumsq_all = None
+    sumsq_all = meter = None
     n_all = 0
     for reel in cpl.reels:
         if not reel.snd:
@@ -142,11 +144,14 @@ def scan_cpl(cpl, progress=None, cancel=None):
                     peaks = np.zeros(nch, np.float32)
                     clip = np.zeros(nch, np.int64)
                     sumsq_all = np.zeros(nch, np.float64)
+                    # LUFS: στα DCP τα 6 πρώτα κανάλια είναι L R C LFE Ls Rs (τα υπόλοιπα HI/VI κ.λπ.)
+                    meter = LoudnessMeter(6 if nch >= 6 else nch, sr)
                 if a.shape[1] != nch:
                     b = np.zeros((len(a), nch), np.float32)
                     k = min(nch, a.shape[1])
                     b[:, :k] = a[:, :k]
                     a = b
+                meter.add(a)
                 ab = np.abs(a)
                 peaks = np.maximum(peaks, ab.max(axis=0))
                 clip += (ab >= 0.9999).sum(axis=0)
@@ -181,6 +186,7 @@ def scan_cpl(cpl, progress=None, cancel=None):
         res["lfe_empty"] = nch > 3 and bool(peaks[3] < 10 ** (-70 / 20))
         pw = [sumsq_all[i] / max(1, n_all) for i in main] or [0]
         res["level_db"] = db(math.sqrt(sum(pw)))
+        res["lufs"] = meter.result()
         silent = [(float(i), v < 10 ** (-60 / 20)) for i, v in enumerate(sec_rms)]
         res["silence"] = _runs(silent, 1.0, 10.0)
         res["audio_seconds"] = len(sec_rms)
@@ -194,6 +200,11 @@ def scan_cpl(cpl, progress=None, cancel=None):
                 out_of_range += 1
             elif e[1] - e[0] < 0.25:
                 short += 1
+        problems = check_entries(t["entries"], total)
+        if problems:  # επικαλύψεις, γρήγοροι, πολύ σύντομοι κ.λπ., με τον χρόνο των πρώτων
+            first = [(p[2], p[3]) for p in problems if p[1] == "warn"][:3]
+            res.setdefault("subs_check", []).append({"track": t["name"], "summary": subs_summary(problems),
+                                                     "first": first})
     res["subs_out"], res["subs_short"] = out_of_range, short
     res["issues"] = scan_findings(res)
     try:
@@ -233,13 +244,21 @@ def scan_findings(res):
         if clipped:
             out.append(("warn", "clipping (ψαλίδισμα): " + ", ".join(f"{c} {n}" for c, n in clipped)))
         mx = max(res["peak_db"][:6] or [-99])
-        out.append(("info", f"μέγιστη στάθμη {mx:.1f} dBFS, μέση {res.get('level_db', 0):.1f} dBFS (RMS)"))
+        if res.get("lufs"):
+            out.append(("info", describe_loudness(res["lufs"]) + f", μέγιστη στάθμη {mx:.1f} dBFS"))
+        else:  # παλιές σαρώσεις, πριν από τη μέτρηση LUFS
+            out.append(("info", f"μέγιστη στάθμη {mx:.1f} dBFS, μέση {res.get('level_db', 0):.1f} dBFS (RMS)"))
         if res.get("audio_seconds") and abs(res["audio_seconds"] - total) > 2:
             out.append(("warn", f"ο ήχος κρατά {ft(res['audio_seconds'])}, η εικόνα {ft(total)}"))
     if res.get("subs_out"):
         out.append(("warn", f"{res['subs_out']} υπότιτλοι εκτός διάρκειας ταινίας"))
     if res.get("subs_short"):
         out.append(("info", f"{res['subs_short']} υπότιτλοι διαρκούν λιγότερο από 0,25 δευτ."))
+    for sc in res.get("subs_check", []):
+        if sc["summary"]:
+            out.append(("warn", f"υπότιτλοι {sc['track']}: {sc['summary']}"))
+        for t, text in sc.get("first", []):
+            out.append(("info", f"  υπότιτλος {ft(t)}: {text}"))
     if not out:
         out.append(("info", "σάρωση: κανένα πρόβλημα"))
     return out

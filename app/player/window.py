@@ -7,6 +7,7 @@
   U αλλαγή ήχου (άλλο CPL) | 0 όλα τα κανάλια | 1-9 solo καναλιού
   A μετρητές ήχου (αυτόματα / πάντα / κρυφοί) | M σίγαση
   N νέα σημείωση | J / Shift+J επόμενη/προηγ. σημείωση | Ctrl+Z σβήσιμο τελευταίας σημείωσης
+  [ ] επανάληψη A–B (\\ ακύρωση) | Z zoom 2x στο σημείο του ποντικιού
   P screenshot | E αριστερό/δεξί μάτι (3D) | Esc / Q έξοδος
 """
 import os
@@ -15,6 +16,7 @@ import sys
 import time
 
 from app.core.config import APP_NAME, SHOTS_DIR, log, resource
+from app.core.i18n import tr
 from app.core.dcp import load_target
 from app.core.media import probe
 from app.core.notes import load_notes, save_notes
@@ -105,6 +107,8 @@ class PlayerWindow:
         self.note_mode, self.note_text = False, ""
         self.want_shot = False
         self.running, self.ended = True, False
+        self.loop_a = self.loop_b = None   # επανάληψη A–B
+        self.zoom = False
         self.pb = self.new_playback(start)
 
     def _init_display(self, fullscreen, center=None):
@@ -145,7 +149,7 @@ class PlayerWindow:
         return self.current[0] if self.current else self.pb.clock()
 
     def say(self, msg):
-        self.toast = (msg, time.time() + 2.5)
+        self.toast = (tr(msg), time.time() + 2.5)
         log.info(msg)
 
     def osd_visible(self):
@@ -210,7 +214,10 @@ class PlayerWindow:
             pg.K_m: self.toggle_mute,
             pg.K_a: self.cycle_meters,
             pg.K_n: self.start_note_mode,
-            pg.K_z: lambda: ctrl and self.undo_note(),
+            pg.K_z: lambda: self.undo_note() if ctrl else self.toggle_zoom(),
+            pg.K_LEFTBRACKET: lambda: self.set_loop("a", now),
+            pg.K_RIGHTBRACKET: lambda: self.set_loop("b", now),
+            pg.K_BACKSLASH: self.clear_loop,
             pg.K_j: lambda: self.jump_note(now, back=bool(shift)),
             pg.K_p: self.request_screenshot,
             pg.K_e: lambda: self.toggle_eye(now),
@@ -297,6 +304,32 @@ class PlayerWindow:
             self.pb.audio.solo = self.solo
         if n > 0 and self.meters == "auto":
             self.meters = "on"
+
+    def toggle_zoom(self):
+        self.zoom = not self.zoom
+        self.say("Zoom 2x (κίνησε το ποντίκι)" if self.zoom else "Zoom: όχι")
+
+    def set_loop(self, which, now):
+        if which == "a":
+            self.loop_a = now
+            if self.loop_b is not None and self.loop_b <= now:
+                self.loop_b = None
+            self.say(f"A: {fmt_time(now, self.rate)}  (] για το τέλος)")
+        else:
+            if self.loop_a is None or now <= self.loop_a + 0.2:
+                self.say("Βάλε πρώτα την αρχή με [")
+                return
+            self.loop_b = now
+            self.say(f"Επανάληψη {fmt_time(self.loop_a, self.rate)} – {fmt_time(now, self.rate)}  (\\ για τέλος)")
+
+    def clear_loop(self):
+        if self.loop_a is not None:
+            self.loop_a = self.loop_b = None
+            self.say("Επανάληψη: όχι")
+
+    def check_loop(self, now):
+        if self.loop_a is not None and self.loop_b is not None and now >= self.loop_b and not self.pb.paused:
+            self.restart(self.loop_a, paused=False)
 
     def toggle_eye(self, now):
         if self.stereo:
@@ -395,12 +428,36 @@ class PlayerWindow:
             surf = pg.transform.scale(surf, (int(w * s), int(h * s)))
         pic = pg.Rect((sw - surf.get_width()) // 2, (sh - surf.get_height()) // 2, surf.get_width(),
                       surf.get_height())
+        if self.zoom:
+            surf = self.zoomed(surf)
         screen.blit(surf, pic.topleft)
         if self.show_subs and 0 <= self.track_i < len(self.tracks):
             bottom = sh - osd.BAR_H if (self.pb.paused or time.time() - self.last_mouse < OSD_SECONDS
                                        or self.note_mode) else sh
             self.subs.draw(screen, self.tracks[self.track_i], t, pic, fw, bottom)
         return pic
+
+    def zoomed(self, surf):
+        """Μεγέθυνση 2x γύρω από το σημείο του ποντικιού (για έλεγχο λεπτομερειών)."""
+        pg = self.pg
+        w, h = surf.get_size()
+        sw, sh = self.screen.get_size()
+        mx, my = pg.mouse.get_pos()
+        fx = min(max((mx - (sw - w) / 2) / max(1, w), 0.0), 1.0)
+        fy = min(max((my - (sh - h) / 2) / max(1, h), 0.0), 1.0)
+        cw, ch = w // 2, h // 2
+        x = int(min(max(fx * w - cw / 2, 0), w - cw))
+        y = int(min(max(fy * h - ch / 2, 0), h - ch))
+        return pg.transform.scale(surf.subsurface(pg.Rect(x, y, cw, ch)), (w, h))
+
+    def lufs_text(self):
+        lt = self.pb.loudness
+        if lt is None:
+            return ""
+        m, s = lt.at(self.now())
+        i = lt.integrated
+        fmt = lambda v: f"{v:.1f}" if v is not None else "–"
+        return f"LUFS  M {fmt(m)}  S {fmt(s)}  I {fmt(i)}"
 
     def save_screenshot(self, pic):
         self.want_shot = False
@@ -433,11 +490,16 @@ class PlayerWindow:
             out.append("χωρίς ήχο")
         if self.notes:
             out.append(f"σημ. {len(self.notes)}")
+        if self.loop_a is not None:
+            b = fmt_time(self.loop_b, self.rate) if self.loop_b is not None else "…"
+            out.append(f"A–B {fmt_time(self.loop_a, self.rate)}–{b}")
+        if self.zoom:
+            out.append("zoom 2x")
         if self.pb.dropped:
             out.append(f"πεταμένα καρέ: {self.pb.dropped}")
         if self.pb.error:
             out.append(self.pb.error)
-        return out
+        return [tr(x) for x in out]
 
     def draw_osd(self, now):
         pg, screen = self.pg, self.screen
@@ -454,7 +516,7 @@ class PlayerWindow:
         screen.blit(self.small.render(self.cpl.title, True, (220, 220, 220)), (16, 10))
         near = [n for n in self.notes if abs(n["t"] - shown_t) < 1.5]
         if near:
-            screen.blit(self.small.render(f"Σημείωση: {near[0]['text']}", True, (255, 120, 120)), (16, 32))
+            screen.blit(self.small.render(tr(f"Σημείωση: {near[0]['text']}"), True, (255, 120, 120)), (16, 32))
 
     def draw(self, now):
         self.screen.fill((0, 0, 0))
@@ -464,7 +526,7 @@ class PlayerWindow:
                 self.save_screenshot(pic)
         show_osd = self.osd_visible()
         if self.pb.audio and self.meter_vals and (self.meters == "on" or (self.meters == "auto" and show_osd)):
-            osd.draw_meters(self.pg, self.screen, self.tiny, self.meter_vals, self.solo)
+            osd.draw_meters(self.pg, self.screen, self.tiny, self.meter_vals, self.solo, self.lufs_text())
         if show_osd:
             self.draw_osd(now)
         else:
@@ -490,6 +552,7 @@ class PlayerWindow:
             self.handle_events()
             now = self.advance_frames()
             self.check_end(now)
+            self.check_loop(now)
             self.update_meters()
             self.draw(now)
             self.test_snapshot()

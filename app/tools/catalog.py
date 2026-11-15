@@ -22,7 +22,8 @@ def norm_title(s):
 
 def read_catalog(path):
     """[{"title", "row"}] από CSV (ή TXT με έναν τίτλο ανά γραμμή)."""
-    raw = open(path, "rb").read()
+    with open(path, "rb") as f:
+        raw = f.read()
     for enc in ("utf-8-sig", "cp1253", "latin-1"):
         try:
             txt = raw.decode(enc)
