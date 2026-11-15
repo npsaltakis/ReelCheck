@@ -35,6 +35,8 @@ COLUMNS = ("Κατάσταση", "Τίτλος", "Διάρκεια", "Εικόν
 WIDTHS = (80, 300, 85, 85, 85, 160, 80, 100, 80)
 LAST_FOLDER_FILE = os.path.join(APP_DIR, "last_folder.txt")
 ISSUE_ICON = {"err": "✖", "warn": "⚠", "info": "ℹ"}
+DEFAULT_GEOMETRY = "1150x680"
+GEOMETRY_RE = re.compile(r"(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)")
 
 
 def new_item(cpl):
@@ -63,7 +65,7 @@ def last_folder():
 def saved_geometry():
     """Μέγεθος και θέση από την προηγούμενη φορά, αν η θέση είναι ακόμα σε συνδεδεμένη οθόνη."""
     g = get_setting("window_geometry")
-    m = re.fullmatch(r"(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)", g or "")
+    m = GEOMETRY_RE.fullmatch(g or "")
     if not m:
         return None
     def off(s):  # "+-1500" σημαίνει x = -1500 (οθόνη αριστερά της κύριας)
@@ -77,9 +79,12 @@ class LauncherWindow:
     def __init__(self, initial=None):
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
-        self.root.geometry(saved_geometry() or "1150x680")
+        self._requested_geometry = saved_geometry() or DEFAULT_GEOMETRY
+        self.root.geometry(self._requested_geometry)
         self.root.minsize(900, 520)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self._height_fix = 0
+        self.root.after(800, self._restore_window_state)
         if resource("icon.ico"):
             try:
                 self.root.iconbitmap(resource("icon.ico"))
@@ -674,13 +679,41 @@ class LauncherWindow:
         self.root.after(1200, self.root.destroy)  # να προλάβει να φανεί το μήνυμα
 
     # ================================================================== εκτέλεση
-    def close(self):
-        """Κλείσιμο από τον χρήστη: θυμάται μέγεθος και θέση (και οθόνη) για την επόμενη φορά."""
+    def _restore_window_state(self):
+        """
+        Μετά το άνοιγμα: (1) μέτρηση πόσο ύψος «τρώει» η μπάρα μενού, ώστε να μη μικραίνει το παράθυρο
+        σε κάθε άνοιγμα/κλείσιμο, (2) μεγιστοποίηση αν ήταν μεγιστοποιημένο (στην οθόνη όπου ήταν).
+        """
         try:
-            if self.root.state() == "normal":
-                set_setting("window_geometry", self.root.geometry())
+            m = GEOMETRY_RE.fullmatch(self._requested_geometry)
+            if m and self.root.state() == "normal":
+                self._height_fix = max(0, int(m.group(2)) - self.root.winfo_height())
+            if get_setting("window_zoomed"):
+                self.root.state("zoomed")
         except Exception:
-            pass
+            log.exception("Επαναφορά θέσης παραθύρου")
+
+    def window_geometry_to_save(self):
+        """(γεωμετρία σε κανονική κατάσταση, ήταν μεγιστοποιημένο;)."""
+        zoomed = self.root.state() == "zoomed"
+        if zoomed:  # η θέση «κανονικής» κατάστασης είναι στην ίδια οθόνη με τη μεγιστοποίηση
+            self.root.state("normal")
+            self.root.update_idletasks()
+        g = self.root.geometry()
+        m = GEOMETRY_RE.fullmatch(g)
+        if m and self._height_fix:
+            g = f"{m.group(1)}x{int(m.group(2)) + self._height_fix}{m.group(3)}{m.group(4)}"
+        return g, zoomed
+
+    def close(self):
+        """Κλείσιμο από τον χρήστη: θυμάται μέγεθος, θέση, οθόνη και μεγιστοποίηση για την επόμενη φορά."""
+        try:
+            if self.root.state() != "iconic":
+                g, zoomed = self.window_geometry_to_save()
+                set_setting("window_geometry", g)
+                set_setting("window_zoomed", zoomed)
+        except Exception:
+            log.exception("Αποθήκευση θέσης παραθύρου")
         self.root.destroy()
 
     def run(self):
