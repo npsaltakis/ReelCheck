@@ -19,7 +19,8 @@ from app.core.config import APP_NAME, APP_VERSION, NO_WINDOW, log
 from app.core.util import Cancelled
 
 GITHUB_REPO = "npsaltakis/ReelCheck"
-RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+PROJECT_URL = f"https://github.com/{GITHUB_REPO}"
+RELEASES_URL = f"{PROJECT_URL}/releases/latest"
 API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 EXE_NAME = "ReelCheck.exe"
 UPDATE_DIR = os.path.join(tempfile.gettempdir(), "ReelCheck_update")

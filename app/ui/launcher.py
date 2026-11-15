@@ -2,6 +2,7 @@
 import os
 import re
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 from app.checks import kdm as kdm_mod
@@ -23,6 +24,7 @@ from app.core.util import fmt_time
 from app.tools.playlist import playlist_order
 from app.ui.subtitle_window import SubtitleWindow
 from app.ui.i18n_tk import install as install_translation
+from app.tools.update import PROJECT_URL
 from app.ui.jobs import JobRunner
 from app.ui.notify import Notifier
 from app.ui.spawn import player_command, start_player
@@ -38,6 +40,7 @@ WIDTHS = (80, 300, 85, 85, 85, 160, 80, 100, 80)
 LAST_FOLDER_FILE = os.path.join(APP_DIR, "last_folder.txt")
 ISSUE_ICON = {"err": "✖", "warn": "⚠", "info": "ℹ"}
 DEFAULT_GEOMETRY = "1150x680"
+GUIDE_URL = f"{PROJECT_URL}/tree/main/docs/guide"  # οδηγίες (PDF) στο GitHub, φτιάχνονται με scripts/make_guide.py
 TIME_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})(?::\d{2})?")
 GEOMETRY_RE = re.compile(r"(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)")
 
@@ -217,7 +220,20 @@ class LauncherWindow(ToolsMixin, FestivalMixin, UpdateMixin):
         settings.add_command(label="Φάκελοι…", command=lambda: self.open_settings("folders"))
         settings.add_command(label="Αναπαραγωγή (συσκευή ήχου κ.λπ.)…", command=lambda: self.open_settings("playback"))
         menubar.add_cascade(label="Ρυθμίσεις", menu=settings)
+        helpm = tk.Menu(menubar, tearoff=0)
+        helpm.add_command(label="Πληροφορίες", command=self.about)
+        helpm.add_command(label="Οδηγίες - Guide", command=self.open_guide, accelerator="F1")
+        menubar.add_cascade(label="Βοήθεια", menu=helpm)
         self.root.config(menu=menubar)
+
+    def open_guide(self, _e=None):
+        """Οδηγίες χρήσης: ο φάκελος docs/guide στο GitHub (πάντα η τελευταία έκδοση)."""
+        webbrowser.open(GUIDE_URL)
+
+    def about(self):
+        messagebox.showinfo(APP_NAME, f"{APP_NAME} v{APP_VERSION}\n\n"
+                            "Έλεγχος, αναπαραγωγή και διαχείριση DCP για φεστιβάλ και αίθουσες.\n\n"
+                            f"{PROJECT_URL}", parent=self.root)
 
     def _bind(self):
         self.entry.bind("<Return>", lambda e: self.load_typed())
@@ -227,6 +243,7 @@ class LauncherWindow(ToolsMixin, FestivalMixin, UpdateMixin):
         self.info.tag_bind("jump", "<Button-1>", self._on_time_click)
         self.info.tag_bind("jump", "<Enter>", lambda e: self.info.configure(cursor="hand2"))
         self.info.tag_bind("jump", "<Leave>", lambda e: self.info.configure(cursor="xterm"))
+        self.root.bind("<F1>", self.open_guide)
 
     # ================================================================== θέμα
     def apply_theme(self):

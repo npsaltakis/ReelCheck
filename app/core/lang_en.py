@@ -392,6 +392,10 @@ EXACT = {
     'και να ελέγχεται αυτόματα (hash + σάρωση), με ειδοποίηση των Windows': 'and check it automatically (hash + scan), with a Windows notification',
     'Έλεγχος κάθε (δευτ.):': 'Check every (s):',
     ' Παρακολούθηση φακέλου για νέα DCP ': ' Watch a folder for new DCPs ',
+    'Βοήθεια': 'Help',
+    'Έλεγχος, αναπαραγωγή και διαχείριση DCP για φεστιβάλ και αίθουσες.': 'Checking, playback and management of DCPs for festivals and cinemas.',
+    'Πληροφορίες': 'About',
+    'Οδηγίες - Guide': 'Guide',
 }
 
 # Πρότυπα με μεταβλητές: «{}» στα ελληνικά, {0} {1} ... στα αγγλικά (με τη σειρά που εμφανίζονται).

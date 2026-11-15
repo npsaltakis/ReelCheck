@@ -142,6 +142,9 @@ python reelcheck.py
 
 ## Χρήση
 
+**Οδηγίες χρήσης σε PDF** (με εικόνες, για όποιον δουλεύει με το πρόγραμμα): [docs/guide](docs/guide), ή από το
+πρόγραμμα **Βοήθεια → Οδηγίες - Guide** (`F1`).
+
 Άνοιγμα DCP:
 
 - κουμπί **Άνοιγμα φακέλου DCP…** (μπορεί να είναι φάκελος με πολλά DCP σε υποφακέλους)
@@ -379,6 +382,9 @@ app/
     theme.py          φωτεινό / σκούρο θέμα
     winutil.py        θέμα και μπάρα τίτλου των Windows
 assets/               icon.ico, icon.png
+docs/guide/           οδηγίες χρήσης: ReelCheck_Guide.pdf και το κείμενό τους (guide.html)
+scripts/make_guide.py οδηγίες → PDF (με τον Edge)
+scripts/guide_shots.py screenshots για τις οδηγίες (docs/screenshots/guide-*.png)
 scripts/make_icon.py  δημιουργία των εικονιδίων
 ReelCheck.bat         εκκίνηση από τον κώδικα με αυτόματη εγκατάσταση
 build_exe.bat         χτίσιμο του dist\ReelCheck.exe με PyInstaller
@@ -428,6 +434,10 @@ python -m unittest discover -s tests -t . -v
 | `DCP_SNAPSHOT_DELAY=1.5` | μαζί με το `DCP_SNAPSHOT`: δευτερόλεπτα πριν σωθεί το καρέ |
 
 ## Αλλαγές
+
+### v1.10
+- **Οδηγίες χρήσης σε PDF** (20 σελίδες, με εικόνες) στο [docs/guide](docs/guide).
+- Νέο μενού **Βοήθεια**: «Πληροφορίες» και «Οδηγίες - Guide» (ή `F1`), που ανοίγει τις οδηγίες στο GitHub.
 
 ### v1.9
 - Νέο μενού **Φεστιβάλ**: πρόγραμμα προβολών με **ημερολόγιο .ics** και **φύλλα μηχανικού προβολής**,

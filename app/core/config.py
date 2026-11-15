@@ -14,7 +14,7 @@ APP_NAME = "ReelCheck"
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-APP_VERSION = "1.9"
+APP_VERSION = "1.10"
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: εξωτερικά προγράμματα χωρίς παράθυρο κονσόλας
 PLAYER_ENDED = 10  # κωδικός εξόδου του player όταν η ταινία τελειώνει μόνη της (--autoexit)
 

@@ -1,5 +1,5 @@
 """Φωτεινό / σκούρο θέμα για τα παράθυρα tkinter."""
-from app.core.config import get_setting
+from app.core import prefs
 from app.ui.winutil import dark_title_bar, system_theme
 
 PALETTES = {
@@ -19,7 +19,7 @@ class Theme:
 
     def __init__(self, root, style, mode=None):
         self.root, self.style = root, style
-        self.mode = mode or get_setting("theme", "auto")
+        self.mode = mode or prefs.get("theme")
         self._last_system = None
 
     @property
