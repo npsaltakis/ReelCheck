@@ -16,6 +16,11 @@ import sys
 from app.core.config import APP_NAME, PLAYER_ENDED, VIDEO_EXT, setup_logging
 
 
+def _require(ok):
+    if not ok:
+        raise RuntimeError("δεν είναι διαθέσιμο")
+
+
 def selftest(out):
     """Για δοκιμές του .exe: ελέγχει ότι φορτώνουν όλα τα κομμάτια."""
     import xml.etree.ElementTree as ET
@@ -30,6 +35,8 @@ def selftest(out):
         ("pillow", lambda: __import__("PIL.Image").Image.new("RGB", (2, 2))),
         ("hashlib", lambda: __import__("hashlib").sha1(b"x").digest()),
         ("app", lambda: __import__("app.ui.launcher") and __import__("app.player.window")),
+        ("h264", lambda: _require(__import__("app.tools.transcode", fromlist=["x"]).encoder_works("libx264"))),
+        ("aac", lambda: _require("aac" in __import__("av").codecs_available)),
     ]:
         try:
             fn()

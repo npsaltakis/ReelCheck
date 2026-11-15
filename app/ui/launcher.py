@@ -26,8 +26,10 @@ from app.tools.convert import convert
 from app.tools.copier import copy_verify, dcp_folders_for, write_copy_report
 from app.tools.dcpomatic import DOWNLOAD_PAGE, find_dcpomatic, find_downloaded_installer, install
 from app.tools.playlist import playlist_order
+from app.tools.transcode import gpu_name, output_path, transcode_dcp, transcode_file
 from app.tools.update import can_self_update, check_update, download_update, install_update
 from app.ui.convert_window import ConvertWindow
+from app.ui.transcode_window import TranscodeWindow, dcp_item
 from app.ui.dialogs import CatalogWindow, SpecDialog
 from app.ui.jobs import JobRunner
 from app.ui.spawn import player_command, start_player
@@ -129,6 +131,7 @@ class LauncherWindow:
         ttk.Button(top, text="Άνοιγμα φακέλου DCP…", command=self.choose_folder).pack(side="left")
         ttk.Button(top, text="Άνοιγμα βίντεο…", command=self.open_video).pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Βίντεο → DCP…", command=self.open_convert).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Μετατροπή βίντεο…", command=self.open_transcode).pack(side="left", padx=(6, 0))
         self.entry = ttk.Entry(top, textvariable=self.path_var)
         self.entry.pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(top, text="Φόρτωση", command=self.load_typed).pack(side="left")
@@ -180,6 +183,8 @@ class LauncherWindow:
         menubar = tk.Menu(self.root)
         tools = tk.Menu(menubar, tearoff=0)
         tools.add_command(label="Μετατροπή βίντεο (MP4 κ.λπ.) σε DCP…", command=self.open_convert)
+        tools.add_command(label="Μετατροπή βίντεο (π.χ. MOV → MP4)…", command=self.open_transcode)
+        tools.add_command(label="Εξαγωγή επιλεγμένων DCP σε MP4 (screener)…", command=self.export_dcp_mp4)
         tools.add_separator()
         tools.add_command(label="Προδιαγραφές φεστιβάλ…", command=self.edit_spec)
         tools.add_command(label="Σάρωση επιλεγμένων (μαύρο, σιωπή, ήχος, υπότιτλοι)",
@@ -655,6 +660,71 @@ class LauncherWindow:
         lines = [f"{item_row(self.items[i])['Κατάσταση']:<8} {self.items[i]['cpl'].title}" for i in idx]
         self.info_box("Η μετατροπή τελείωσε και τα DCP ελέγχθηκαν:\n\n" + "\n".join(lines) +
                       "\n\nΛεπτομέρειες στη λίστα (επίλεξε το καθένα).")
+
+    # ------------------------------------------------------------------ μετατροπή βίντεο
+    def open_transcode(self, items=()):
+        if not hasattr(self, "_gpu_label"):
+            self._gpu_label = gpu_name()  # δοκιμή encoders μία φορά
+        TranscodeWindow(self.root, self.theme, self.run_transcode, items, self._gpu_label)
+
+    def export_dcp_mp4(self):
+        idx = [i for i in self.selected() if not self.items[i]["cpl"].encrypted and not self.items[i]["cpl"].is_file]
+        if not idx:
+            self.info_box("Διάλεξε πρώτα DCP (μη κρυπτογραφημένα) από τη λίστα.")
+            return
+        self.open_transcode([dcp_item(self.items[i]["cpl"], self.items[i]["info"],
+                                      track_summary(self.items[i]["cpl"])[0]) for i in idx])
+
+    def run_transcode(self, items, preset, opts, out_dir):
+        log.info("Μετατροπή βίντεο: %d αρχεία σε %s %s -> %s", len(items), preset, opts, out_dir or "δίπλα")
+        self.start_job("Μετατροπή βίντεο", lambda progress, cancel: self._transcode_job(items, preset, opts, out_dir,
+                                                                                        progress, cancel))
+
+    def _transcode_job(self, items, preset, opts, out_dir, progress, cancel):
+        total = sum(max(1.0, i["duration"]) for i in items)
+        done, results = 0.0, []
+        for n, it in enumerate(items, 1):
+            span = max(1.0, it["duration"])
+            label = f"{n}/{len(items)} {os.path.basename(it['path'])[:35]}: "
+
+            def p(frac, msg, done=done, span=span, label=label):
+                progress((done + span * frac) / total, label + msg)
+
+            folder = out_dir or os.path.dirname(it["path"])
+            os.makedirs(folder, exist_ok=True)
+            dst = output_path(it["path"], folder, preset)
+            try:
+                if it["kind"] == "dcp":
+                    r = transcode_dcp(it["cpl"], dst, preset, dict(opts, subs="burn"), p, cancel)
+                else:
+                    r = transcode_file(it["path"], dst, preset, dict(opts, srt=it.get("srt")), p, cancel)
+                results.append((it, dst, r, None))
+            except Exception as e:
+                if "Cancelled" in type(e).__name__:
+                    if os.path.exists(dst):
+                        os.remove(dst)
+                    raise
+                log.exception("Μετατροπή %s", it["path"])
+                if os.path.exists(dst):
+                    os.remove(dst)
+                results.append((it, dst, None, str(e)))
+            done += span
+        self.jobs.call_in_gui(lambda: self._transcode_report(results, out_dir))
+
+    def _transcode_report(self, results, out_dir):
+        ok = [(it, dst, r) for it, dst, r, err in results if not err]
+        bad = [(it, err) for it, _d, _r, err in results if err]
+        lines = []
+        for it, dst, r in ok:
+            how = "χωρίς επανακωδικοποίηση" if r["mode"] == "remux" else r["encoder"]
+            lines.append(f"OK  {os.path.basename(dst)}  ({how})")
+        lines += [f"ΣΦΑΛΜΑ  {os.path.basename(it['path'])}: {err[:120]}" for it, err in bad]
+        folder = out_dir or (os.path.dirname(ok[0][1]) if ok else None)
+        msg = "\n".join(lines) + ("\n\nΆνοιγμα του φακέλου;" if folder else "")
+        if folder and messagebox.askyesno(APP_NAME, msg, parent=self.root):
+            os.startfile(folder)
+        elif not folder:
+            self.info_box(msg)
 
     def edit_spec(self):
         def saved(spec):
