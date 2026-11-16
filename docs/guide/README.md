@@ -1,28 +1,31 @@
 # ReelCheck — Οδηγίες χρήσης / User guide
 
-## 📄 [Άνοιγμα των οδηγιών (PDF)](ReelCheck_Guide.pdf)
+| 🇬🇷 Ελληνικά | 🇬🇧 English |
+|---|---|
+| **[📄 Οδηγίες χρήσης (PDF)](ReelCheck_Guide.pdf)** | **[📄 User guide (PDF)](ReelCheck_Guide_EN.pdf)** |
 
-Οδηγίες για όποιον δουλεύει με το ReelCheck, με εικόνες από το πρόγραμμα:
+Ανοίγουν και από το πρόγραμμα: **Βοήθεια → Οδηγίες - Guide** (ή `F1`).
+Also from the program: **Help → Guide** (or `F1`).
 
-1. Τι είναι το ReelCheck
-2. Εγκατάσταση και αναβάθμιση
-3. Πρώτα βήματα
-4. Τι σημαίνουν οι καταστάσεις (OK / ΠΡΟΣΟΧΗ / ΣΦΑΛΜΑ)
-5. Οι έλεγχοι αναλυτικά (hash, σάρωση, συγχρονισμός, DCNC, KDM)
-6. Αναπαραγωγή και πλήκτρα
-7. Παραλαβή DCP και δίσκοι Linux
-8. Αντιγραφή με επαλήθευση
-9. Μετατροπές: βίντεο → DCP, MOV → MP4, DCP → MP4, ident
-10. Εργαλεία φεστιβάλ
-11. Ρυθμίσεις
-12. Αρχεία και ιδιωτικότητα
-13. Συχνές ερωτήσεις και προβλήματα
+## Περιεχόμενα / Contents
 
-Ανοίγει και από το πρόγραμμα: **Βοήθεια → Οδηγίες - Guide** (ή `F1`).
-
-*The guide is currently in Greek.*
+| | Ελληνικά | English |
+|---|---|---|
+| 1 | Τι είναι το ReelCheck | What ReelCheck is |
+| 2 | Εγκατάσταση και αναβάθμιση | Installation and updates |
+| 3 | Πρώτα βήματα | Getting started |
+| 4 | Τι σημαίνουν οι καταστάσεις | What the statuses mean |
+| 5 | Οι έλεγχοι αναλυτικά | The checks in detail |
+| 6 | Αναπαραγωγή και πλήκτρα | Playback and keys |
+| 7 | Παραλαβή DCP και δίσκοι Linux | Ingesting DCPs and Linux drives |
+| 8 | Αντιγραφή με επαλήθευση | Copying with verification |
+| 9 | Μετατροπές και ident | Conversions and ident |
+| 10 | Εργαλεία φεστιβάλ | Festival tools |
+| 11 | Ρυθμίσεις | Settings |
+| 12 | Αρχεία και ιδιωτικότητα | Files and privacy |
+| 13 | Συχνές ερωτήσεις | FAQ and troubleshooting |
 
 ---
 
-<sub>Το κείμενο είναι στο [`guide.html`](guide.html). Νέο PDF: `python scripts/make_guide.py`,
-νέα screenshots: `python scripts/guide_shots.py`.</sub>
+<sub>Κείμενο / source: [`guide.html`](guide.html), [`guide_en.html`](guide_en.html), στυλ / style [`guide.css`](guide.css).
+PDF: `python scripts/make_guide.py` · screenshots: `python scripts/guide_shots.py el` / `python scripts/guide_shots.py en`.</sub>

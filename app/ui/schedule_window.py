@@ -106,7 +106,7 @@ class ScheduleWindow:
             except ValueError:
                 end = "?"
             st = self.dcp_status(s)
-            notes = ("ΣΥΓΚΡΟΥΣΗ ΩΡΑΣ · " if s["id"] in clash else "") + s["notes"]
+            notes = " · ".join(x for x in ("ΣΥΓΚΡΟΥΣΗ ΩΡΑΣ" if s["id"] in clash else "", s["notes"]) if x)
             tag = "clash" if s["id"] in clash else (st.split()[0] if st else "")
             self.tree.insert("", "end", iid=s["id"], tags=(tag,),
                              values=(s["date"], s["time"], end, s["room"], s["title"], st, notes))

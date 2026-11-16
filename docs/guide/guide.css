@@ -1,0 +1,30 @@
+@page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; line-height: 1.45; color: #1d1d1f; margin: 0; }
+h1 { font-size: 21pt; margin: 0 0 4mm; color: #111; page-break-before: always; border-bottom: 2px solid #e6a21e; padding-bottom: 2mm; }
+h2 { font-size: 14pt; margin: 7mm 0 2mm; color: #222; page-break-after: avoid; }
+h3 { font-size: 12pt; margin: 5mm 0 1.5mm; page-break-after: avoid; }
+p { margin: 0 0 2.5mm; }
+ul, ol { margin: 0 0 3mm 6mm; padding-left: 4mm; }
+li { margin-bottom: 1mm; }
+table { border-collapse: collapse; width: 100%; margin: 2mm 0 4mm; font-size: 10pt; page-break-inside: auto; }
+tr { page-break-inside: avoid; }
+th, td { border: 1px solid #c9c9ce; padding: 1.6mm 2.2mm; text-align: left; vertical-align: top; }
+th { background: #f0f0f2; }
+code, kbd { font-family: Consolas, monospace; font-size: 9.5pt; background: #f0f0f2; border: 1px solid #ddd; border-radius: 3px; padding: 0 1.2mm; }
+figure { margin: 3mm 0 5mm; text-align: center; page-break-inside: avoid; }
+figure img { max-width: 100%; max-height: 105mm; border: 1px solid #c9c9ce; border-radius: 2px; }
+figcaption { font-size: 9pt; color: #666; margin-top: 1.5mm; }
+.note, .warn, .tip { border-radius: 4px; padding: 2.5mm 3.5mm; margin: 3mm 0 4mm; page-break-inside: avoid; }
+.note { background: #eef4fd; border-left: 4px solid #0a64d8; }
+.tip { background: #eef8f0; border-left: 4px solid #137333; }
+.warn { background: #fdf0ee; border-left: 4px solid #c5221f; }
+.ok { color: #137333; font-weight: 600; } .attn { color: #b06000; font-weight: 600; } .err { color: #c5221f; font-weight: 600; }
+.cover { page-break-before: auto; text-align: center; padding-top: 55mm; }
+.cover img { width: 34mm; }
+.cover h1 { page-break-before: auto; border: 0; font-size: 34pt; margin: 8mm 0 2mm; }
+.cover .sub { font-size: 15pt; color: #444; }
+.cover .ver { margin-top: 18mm; color: #666; }
+.toc { columns: 2; column-gap: 10mm; font-size: 11pt; }
+.toc li { margin-bottom: 1.5mm; }
+.steps li { margin-bottom: 1.8mm; }
+.small { font-size: 9.5pt; color: #555; }

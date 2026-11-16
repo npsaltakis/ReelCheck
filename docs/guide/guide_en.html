@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReelCheck — User guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<div class="cover">
+  <img src="../../assets/icon.png" alt="">
+  <h1>ReelCheck</h1>
+  <div class="sub">User guide</div>
+  <p style="margin-top:8mm">Checking, playback and management of DCPs for festivals and cinemas</p>
+  <div class="ver">Version {{VERSION}} · {{DATE}}</div>
+</div>
+
+<h1>Contents</h1>
+<ol class="toc">
+  <li>What ReelCheck is</li>
+  <li>Installation and updates</li>
+  <li>Getting started</li>
+  <li>What the statuses mean</li>
+  <li>The checks in detail</li>
+  <li>Playback</li>
+  <li>Ingesting DCPs and Linux drives</li>
+  <li>Copying with verification</li>
+  <li>Conversions: video → DCP, MOV → MP4, DCP → MP4, ident</li>
+  <li>Festival tools</li>
+  <li>Settings</li>
+  <li>Files and privacy</li>
+  <li>FAQ and troubleshooting</li>
+</ol>
+
+<!-- ===================================================================== 1 -->
+<h1>1. What ReelCheck is</h1>
+<p>ReelCheck is a Windows program that checks <b>DCPs</b> (Digital Cinema Packages, the format in which films are
+delivered to cinemas) before they are screened. It shows at a glance whether a film is complete, correct and ready
+to be ingested into the cinema server, and it helps with all the work of a festival: receiving drives, the screening
+schedule, reports for the selection committee, returns.</p>
+
+<h2>What it does</h2>
+<ul>
+  <li><b>Checks</b> that no files are missing and that none is damaged (hash check against the PKL).</li>
+  <li><b>Scans</b> the whole film without playing it: black picture, silence, channels without signal, clipping,
+      loudness (LUFS), subtitles.</li>
+  <li><b>Reads the name</b> of the DCP (DCNC) and tells you when it does not match the content (e.g. it says 5.1 but
+      the sound is stereo).</li>
+  <li><b>Plays</b> DCPs (and ordinary video files) with subtitles, audio meters and notes.</li>
+  <li><b>Copies</b> DCPs to drives with verification, and reads Linux drives that Windows cannot open.</li>
+  <li><b>Converts</b> video to DCP, MOV to MP4, DCP to MP4 (screener), and creates a festival ident.</li>
+  <li><b>Organises the festival</b>: screening schedule, projectionist sheets, calendar, PDF report for the committee,
+      catalogue, returns, statistics.</li>
+</ul>
+
+<h2>What it does not do</h2>
+<ul>
+  <li>It does not play <b>encrypted DCPs</b>: these need a KDM and a certified cinema server. ReelCheck only shows which
+      server a KDM is for and until when it is valid.</li>
+  <li>It never writes anything inside DCP folders and never changes their files.</li>
+  <li>Playback is for checking, not for public screening: colours are approximate (XYZ → computer screen).</li>
+</ul>
+
+<!-- ===================================================================== 2 -->
+<h1>2. Installation and updates</h1>
+<h2>Installation</h2>
+<ol class="steps">
+  <li>Download <code>ReelCheck.exe</code> from the program's <b>Releases</b> page on GitHub.</li>
+  <li>Put it in a folder of your choice (e.g. the Desktop) and double-click it. No installation and no other
+      programs are needed.</li>
+  <li>The first time, Windows may show “Windows protected your PC”, because the file is not digitally signed.
+      Click <b>More info → Run anyway</b>.</li>
+</ol>
+<p>Requirements: Windows 10 or 11, 64-bit. A modern processor helps for 4K playback; on slow computers there is the
+“Half resolution” option.</p>
+
+<h2>Language</h2>
+<p>The program starts in Greek. For English: <b>Settings → Settings… → General → Language → English</b>,
+then restart ReelCheck (it offers to do it for you).</p>
+
+<h2>Updates</h2>
+<p>ReelCheck checks once a day whether a new version exists. If it does, it asks:</p>
+<ul>
+  <li><b>Yes</b>: downloads the new version, verifies it, closes and reopens in the new version.</li>
+  <li><b>No</b>: opens the page with the changes.</li>
+  <li><b>Cancel</b>: it will ask again later.</li>
+</ul>
+<p>To check now: <b>Tools → Check for updates / upgrade</b>. Settings, notes and scans are kept.</p>
+
+<!-- ===================================================================== 3 -->
+<h1>3. Getting started</h1>
+<ol class="steps">
+  <li>Click <b>Open DCP folder…</b> and choose the folder of a film, or a folder with many DCPs in subfolders (e.g. the
+      whole drive the distributor sent). You can also paste the path into the field at the top right and press
+      <kbd>Enter</kbd>, or drag the folder onto <code>ReelCheck.exe</code>.</li>
+  <li>Each film (each CPL) becomes one row in the list, with status, duration, picture, sound, subtitles and files.</li>
+  <li>Click a film: its details and the findings of the checks appear below.</li>
+  <li>For a full check click <b>Hash check selected</b> and <b>Scan film</b>. They run in the background, with a
+      progress bar and a <b>Cancel</b> button.</li>
+  <li>Double-click or <b>Play</b> to watch the film.</li>
+</ol>
+<figure><img src="../screenshots/guide-en-main.png" alt=""><figcaption>The main window: film list, details and findings of the selected film.</figcaption></figure>
+
+<h2>Main window buttons</h2>
+<table>
+  <tr><th style="width:32%">Button</th><th>What it does</th></tr>
+  <tr><td>Open DCP folder…</td><td>loads a folder with one or more DCPs</td></tr>
+  <tr><td>Ingest DCP…</td><td>copies from the distributor's drive with all checks (chapter 7)</td></tr>
+  <tr><td>Open video…</td><td>plays an ordinary video file (MP4, MOV, MKV…)</td></tr>
+  <tr><td>Video → DCP… / Convert video…</td><td>conversions (chapter 9)</td></tr>
+  <tr><td>Hash check selected / all</td><td>compares every file with the PKL (chapter 5)</td></tr>
+  <tr><td>Scan film</td><td>checks picture, sound and subtitles over the whole duration</td></tr>
+  <tr><td>HTML report / Export CSV</td><td>printable report and a table for Excel</td></tr>
+  <tr><td>Log</td><td>the log file, useful when something goes wrong</td></tr>
+  <tr><td>Half resolution / Full screen</td><td>how playback will open</td></tr>
+</table>
+<div class="tip">With <kbd>Ctrl</kbd>+click or <kbd>Shift</kbd>+click you select several films at once. Most commands
+work on all the selected films.</div>
+
+<!-- ===================================================================== 4 -->
+<h1>4. What the statuses mean</h1>
+<table>
+  <tr><th style="width:18%">Status</th><th>Meaning</th><th style="width:30%">What to do</th></tr>
+  <tr><td class="ok">OK</td><td>All files are present and no problem was found.</td><td>Nothing. The film is ready.</td></tr>
+  <tr><td class="attn">WARNING</td><td>Something needs a look: e.g. the name does not match the content, a long silence,
+      it does not meet the festival specifications, the KDM expires.</td><td>Read the findings below the list; clicking a
+      time opens playback at that point.</td></tr>
+  <tr><td class="err">ERROR</td><td>Serious problem: files are missing, bad hash (damaged file), the picture or sound
+      cannot be opened.</td><td>Ask the distributor for a new copy, or copy again.</td></tr>
+</table>
+
+<h2>Common findings</h2>
+<table>
+  <tr><th style="width:36%">Finding</th><th>What it means</th></tr>
+  <tr><td>Files: missing N</td><td>The CPL refers to files that are not in the folder. If it is a VF, its OV may be missing.</td></tr>
+  <tr><td>Files: OK (+OV)</td><td>A Version File that takes picture/sound from the OV in the folder next to it. This is correct.</td></tr>
+  <tr><td>Hash: BAD HASH</td><td>The file differs from what its creator declared: damaged or incomplete.</td></tr>
+  <tr><td>name: sound 5.1, but it has 2 channels</td><td>The DCNC name does not match the content. The film plays, but
+      tell the distributor / the projectionist.</td></tr>
+  <tr><td>black picture 00:41:10–00:41:30</td><td>Continuous black picture in the middle of the film. Check whether it
+      is intended.</td></tr>
+  <tr><td>silence …, channels without signal</td><td>Possible problem in the mix or the mastering.</td></tr>
+  <tr><td>clipping</td><td>The sound exceeds full scale at some points; distortion may be audible.</td></tr>
+  <tr><td>encrypted: no KDM found</td><td>A KDM for the cinema server is needed. Tools → Load KDM.</td></tr>
+</table>
+<div class="note">The thresholds (e.g. how many seconds of black become a finding) are changed in
+<b>Settings → Checks</b>. The festival specifications (2K/4K, fps, sound, subtitles, maximum duration) are set in
+<b>Settings → Festival</b>.</div>
+
+<!-- ===================================================================== 5 -->
+<h1>5. The checks in detail</h1>
+<h2>Hash check</h2>
+<p>Every DCP has a PKL (packing list) with the size and the SHA-1 “fingerprint” of every file. The hash check reads
+every file again and compares. This catches files damaged during copying or downloading. It takes as long as reading
+the whole DCP (e.g. 2–5 minutes for a 150 GB film from a fast drive). The result is remembered: if the file does not
+change, the next check is instant.</p>
+
+<h2>Film scan</h2>
+<p>Checks the whole duration without playing: black picture, silence, channels without signal, LFE, clipping, LUFS
+loudness (integrated, LRA, true peak), whether the sound lasts as long as the picture, and the subtitles (outside the
+duration, too short, overlaps, reading speed). A 2-hour film takes about 3 minutes. The first and last minutes are
+treated as titles, so black there is not reported as a problem.</p>
+
+<h2>Audio/picture sync</h2>
+<p><b>Tools → Audio/picture sync of selected.</b> Finds “flashes” in the picture and short “beeps” in the sound (as in a
+sync test, 2-pop or clapper) in the first 2 minutes and measures how many ms apart they are. A positive number means
+the sound comes later. Up to ±22 ms (half a frame) is not noticeable, up to ±45 ms gives WARNING, above that ERROR. If
+the film has no such signal at the start, the program says so.</p>
+
+<h2>DCNC name and specifications</h2>
+<p>The name of a DCP follows the DCNC convention, e.g. <code>Taxidi_FTR-1_F_EL-EN_51_2K_20261115_SMPTE_OV</code>:
+title, kind (FTR feature, SHR short, TLR trailer), aspect (F flat, S scope), audio-subtitle language, sound
+(51 = 5.1), resolution, date, standard, OV/VF. ReelCheck reads it and compares it with the content. With the
+<b>festival specifications</b> it gives WARNING for anything you do not accept (e.g. 2K only, SMPTE only, English
+subtitles required).</p>
+
+<h2>KDM</h2>
+<p>For encrypted DCPs: KDM files (.xml) are found automatically in the folder or loaded with <b>Tools → Load KDM</b>.
+ReelCheck shows which server they are for and from when until when they are valid, and warns when they have expired
+or are not yet valid.</p>
+
+<!-- ===================================================================== 6 -->
+<h1>6. Playback</h1>
+<p>Double-click a film or click <b>Play</b>. A window opens with the film, a time bar, subtitles and audio meters per
+channel. Clicking a time in the findings or notes opens playback shortly before that point.</p>
+<figure><img src="../screenshots/player-meters.png" alt=""><figcaption>Playback with audio meters and LUFS loudness.</figcaption></figure>
+<h2>Keys</h2>
+<table>
+  <tr><th style="width:24%">Key</th><th>Function</th><th style="width:24%">Key</th><th>Function</th></tr>
+  <tr><td><kbd>Space</kbd></td><td>pause / resume</td><td><kbd>F</kbd></td><td>full screen</td></tr>
+  <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>−10 / +10 s (with <kbd>Shift</kbd> ±60)</td><td><kbd>H</kbd></td><td>half / full resolution</td></tr>
+  <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>frame by frame</td><td><kbd>S</kbd></td><td>subtitles on/off</td></tr>
+  <tr><td><kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td>previous / next reel</td><td><kbd>L</kbd></td><td>other subtitle language</td></tr>
+  <tr><td><kbd>Home</kbd></td><td>start</td><td><kbd>U</kbd></td><td>other sound (another CPL of the same duration)</td></tr>
+  <tr><td><kbd>0</kbd></td><td>all channels</td><td><kbd>1</kbd>–<kbd>9</kbd></td><td>solo a channel (L, R, C, LFE, Ls, Rs…)</td></tr>
+  <tr><td><kbd>M</kbd></td><td>mute</td><td><kbd>A</kbd></td><td>meters: automatic / always / hidden</td></tr>
+  <tr><td><kbd>N</kbd></td><td>new note at the current time</td><td><kbd>J</kbd> / <kbd>Shift+J</kbd></td><td>next / previous note</td></tr>
+  <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>A–B loop (<kbd>\</kbd> cancel)</td><td><kbd>Z</kbd></td><td>2× zoom at the mouse position</td></tr>
+  <tr><td><kbd>P</kbd></td><td>screenshot (Pictures\ReelCheck)</td><td><kbd>E</kbd></td><td>3D: left / right eye</td></tr>
+  <tr><td><kbd>Ctrl+Z</kbd></td><td>delete last note</td><td><kbd>Esc</kbd> / <kbd>Q</kbd></td><td>exit</td></tr>
+</table>
+<div class="tip"><b>Notes</b> (“noise in the sound”, “black frame”) appear as marks on the time bar, in the film
+details and in the reports. They help you record problems while checking.</div>
+<h2>Playlist</h2>
+<p>Select e.g. trailer, ident and film with <kbd>Ctrl</kbd>+click and <b>Tools → Playlist with the selected</b>: they play
+one after the other (trailers and spots first, then the film).</p>
+
+<!-- ===================================================================== 7 -->
+<h1>7. Ingesting DCPs and Linux drives</h1>
+<h2>Ingest from a drive</h2>
+<p>Button <b>Ingest DCP…</b>: connect the drive that arrived and everything happens in one go:</p>
+<ol class="steps">
+  <li>Choose the drive (or folder). All the DCPs on it are listed, with their size.</li>
+  <li>Choose the festival folder. The program checks that there is enough space.</li>
+  <li>Copy with verification, hash check, scan, comparison with the festival catalogue.</li>
+  <li>At the end a report opens with the result for each film.</li>
+</ol>
+<figure><img src="../screenshots/guide-en-ingest.png" alt=""><figcaption>The “Ingest DCP” window.</figcaption></figure>
+
+<h2>Linux drives (ext2 / ext3 / ext4)</h2>
+<p>Many DCPs arrive on drives made for cinema servers, which Windows cannot read.</p>
+<div class="warn"><b>If Windows asks “You need to format the disk”, click CANCEL.</b> Formatting erases all the DCPs on
+the drive.</div>
+<ol class="steps">
+  <li><b>Tools → Linux drive (ext2/3/4) that Windows can't open…</b>. Reading a physical drive needs administrator rights:
+      click “Open ReelCheck as administrator” and “Yes” when Windows asks.</li>
+  <li>Choose the partition and “Read selected”. The DCPs are listed.</li>
+  <li>Choose a destination folder and start the copy; every file is verified.</li>
+</ol>
+<p>The drive is opened read-only: ReelCheck never writes to it.</p>
+
+<!-- ===================================================================== 8 -->
+<h1>8. Copying with verification</h1>
+<p><b>Tools → Copy selected to a drive with verification…</b>: to prepare a drive for the cinema or a backup.</p>
+<ul>
+  <li>Whole DCP folders are copied (including the OV of a VF).</li>
+  <li>Every file is read back from the destination and compared with the PKL (or the original).</li>
+  <li>Files that already exist identical at the destination are not copied again, only checked.</li>
+  <li>A report <code>ReelCheck_copy_….txt</code> with the result for every file is written at the destination.</li>
+</ul>
+<div class="note">If a file shows “the original does not match the PKL”, the problem already existed on the drive that
+arrived, not in the copy.</div>
+
+<!-- ===================================================================== 9 -->
+<h1>9. Conversions</h1>
+<h2>Video → DCP</h2>
+<p>Button <b>Video → DCP…</b>. Accepts MP4, MOV, MKV and more. It uses the free program <b>DCP-o-matic</b>; if it is
+not installed, ReelCheck helps you download it and installs it.</p>
+<ol class="steps">
+  <li>Add files or a folder and set the order with ▲ ▼.</li>
+  <li>Choose: <b>one DCP with everything in order</b> (like one screening, with a gap in between) or <b>a separate DCP for
+      each file</b>.</li>
+  <li>Title, kind, aspect (Flat 1.85 / Scope 2.39), fps, subtitle language, same loudness for all.</li>
+  <li><b>Convert to DCP</b>. At the end the DCPs are loaded into the list and checked automatically.</li>
+</ol>
+<figure><img src="../screenshots/guide-en-convert.png" alt=""><figcaption>The “Video → DCP” window.</figcaption></figure>
+<p class="small">.srt subtitles with the same name (e.g. <code>film.srt</code> or <code>film.en.srt</code>) are added
+automatically. Greek titles are written in Latin characters in the DCP name. It takes about as long as the video or
+longer, and needs free space of about 2× the final DCP.</p>
+
+<h2>Convert video (e.g. MOV → MP4)</h2>
+<p>Button <b>Convert video…</b>: to MP4 H.264 (plays everywhere), MP4 H.265 (smaller) or MOV ProRes (for editing).
+Options for quality, resolution, sound (stereo or as it is) and subtitles (copy or burned into the picture). If the
+video is already H.264/H.265, only the container changes: it takes seconds and loses no quality. The graphics card is
+used when available.</p>
+<div class="tip">For a DCP from MOV you do <b>not</b> need an MP4 first: “Video → DCP” accepts MOV/ProRes directly, and
+every intermediate conversion loses a little quality.</div>
+
+<h2>DCP → MP4 (screener)</h2>
+<p>Select DCPs in the list and <b>Tools → Export selected DCPs to MP4 (screener)</b>: e.g. for the committee or the
+website, with the DCP subtitles burned into the picture. Not possible for encrypted DCPs.</p>
+
+<h2>Festival ident / intro</h2>
+<p><b>Festival → Festival ident / intro → DCP…</b>: give a logo (PNG with transparency or JPG), optionally music and
+text, duration and aspect, and you get a ready DCP (kind XSN) to play before every film. The logo fades in and out on
+a black background; the music is cut to the duration with a fade at the end.</p>
+<figure><img src="../screenshots/guide-en-ident.png" alt="" style="max-height:70mm"><figcaption>The ident window.</figcaption></figure>
+
+<!-- ===================================================================== 10 -->
+<h1>10. Festival tools</h1>
+<p>All of these are in the <b>Festival</b> menu.</p>
+
+<h2>Screening schedule</h2>
+<p>Add screenings (date, time, screen, film from the list, extra time for an introduction or Q&amp;A). The end time is
+calculated automatically and <b>time clashes</b> in the same screen are shown in red. The status of the DCP is shown
+for every screening.</p>
+<figure><img src="../screenshots/guide-en-schedule.png" alt=""><figcaption>A schedule with two screenings that clash.</figcaption></figure>
+<ul>
+  <li><b>Print / HTML</b>: the whole schedule by day.</li>
+  <li><b>Projectionist sheets</b>: one page per day and screen, with format, sound, subtitles, KDM and boxes
+      “Server / Test / Shown” for the projectionist to tick, and space for a signature.</li>
+  <li><b>Calendar (.ics)</b>: opens in Outlook or can be imported into Google Calendar (Settings → Import), so the
+      schedule is also on your phone.</li>
+  <li><b>Export CSV</b>: for Excel.</li>
+</ul>
+
+<h2>PDF report for the committee</h2>
+<p>For the selected films (or all): a cover page with a table and one page per film with three frames, details,
+findings, notes and space for the committee's comments. It needs Microsoft Edge (present on every Windows).</p>
+
+<h2>Comparing two DCP versions</h2>
+<p>When the distributor sends a new version: select the old and the new one with <kbd>Ctrl</kbd>+click and
+<b>Tools → Compare two selected DCPs</b>. The table shows what is the same (✔) and what differs (≠, in red):
+duration, reels, picture, sound, subtitles. Files are compared by their PKL fingerprint without being read again, so
+the comparison is instant.</p>
+<figure><img src="../screenshots/guide-en-compare.png" alt=""><figcaption>Comparing two DCPs.</figcaption></figure>
+
+<h2>Watching a folder</h2>
+<p>In <b>Settings → Folders</b> you set a folder (e.g. where DCPs are downloaded). When a new DCP arrives and the
+download or copy has finished, it is added to the list by itself, checked (hash + scan), and a Windows notification
+shows the result.</p>
+
+<h2>Festival catalogue</h2>
+<p><b>Festival → Festival catalogue (CSV)…</b>: give the list of titles you expect (CSV with a “Title” column, or plain
+text with one title per line) and see which films arrived, which are missing and which have problems. Greek titles
+are also matched against Latin spelling (Το Ταξίδι = Taxidi).</p>
+
+<h2>DCP returns</h2>
+<p>Which drives and DCPs must be returned, to whom and by when. Overdue items are shown in red and those due within 3
+days in orange. <b>Festival → Add selected to returns</b> adds the films selected in the list directly. Click
+“✔ Returned” when the drive has gone.</p>
+<figure><img src="../screenshots/guide-en-returns.png" alt=""><figcaption>The returns list.</figcaption></figure>
+
+<h2>Festival statistics</h2>
+<p>A summary of the list: number of films, total duration, disk space, kind, 2K/4K, sound, standard, subtitles,
+encrypted, how many were checked and their status. Exported to CSV.</p>
+
+<h2>Notifications</h2>
+<p>When a long task finishes (copy, scan, conversion), a Windows notification appears at the bottom right, so you do
+not have to watch the screen. It is set in Settings → General.</p>
+
+<!-- ===================================================================== 11 -->
+<h1>11. Settings</h1>
+<p>Menu <b>Settings → Settings…</b>. Changes apply immediately, except the language, which needs a restart.</p>
+<figure><img src="../screenshots/guide-en-settings.png" alt="" style="max-height:90mm"><figcaption>The “Checks” tab.</figcaption></figure>
+<table>
+  <tr><th style="width:18%">Tab</th><th>Contents</th></tr>
+  <tr><td>General</td><td>language (Greek / English), theme (light / dark / automatic), update check, open the last folder,
+      Windows notifications</td></tr>
+  <tr><td>Folders</td><td>festival folder, conversion outputs, screenshots, watching a folder for new DCPs</td></tr>
+  <tr><td>Playback</td><td>full screen / half resolution, <b>audio device</b> (e.g. the cinema speakers), initial volume,
+      subtitles, meters</td></tr>
+  <tr><td>Checks</td><td>thresholds for black and silence, opening / end titles, subtitle limits, LUFS loudness target,
+      sync analysis duration</td></tr>
+  <tr><td>Festival</td><td>the specifications you accept (resolution, fps, standard, sound, subtitle language, duration,
+      encryption, 3D)</td></tr>
+  <tr><td>Data</td><td>data folder, cache cleanup, <b>export / import settings</b> to move them to another computer</td></tr>
+</table>
+
+<!-- ===================================================================== 12 -->
+<h1>12. Files and privacy</h1>
+<table>
+  <tr><th style="width:38%">What</th><th>Where</th></tr>
+  <tr><td>Settings</td><td><code>%APPDATA%\ReelCheck\settings.json</code></td></tr>
+  <tr><td>Notes</td><td><code>%APPDATA%\ReelCheck\notes\</code></td></tr>
+  <tr><td>Scans, hash cache</td><td><code>%APPDATA%\ReelCheck\scans\</code>, <code>hash_cache.json</code></td></tr>
+  <tr><td>Screening schedule, returns</td><td><code>%APPDATA%\ReelCheck\schedule.json</code>, <code>returns.json</code></td></tr>
+  <tr><td>Log</td><td><code>%APPDATA%\ReelCheck\reelcheck.log</code> (Log button)</td></tr>
+  <tr><td>Screenshots</td><td><code>Pictures\ReelCheck</code></td></tr>
+  <tr><td>Copy report</td><td>in the destination folder</td></tr>
+</table>
+<p>Nothing is written in DCP folders. The program connects to the Internet only to check for a new version (GitHub)
+and sends nothing about the user or the films. To move to another computer: Settings → Data → export settings.</p>
+
+<!-- ===================================================================== 13 -->
+<h1>13. FAQ and troubleshooting</h1>
+<h3>Playback stutters or drops frames.</h3>
+<p>4K DCPs are heavy. Choose “Half resolution” (or press <kbd>H</kbd> during playback). For checking sync, prefer the
+automatic check (chapter 5).</p>
+<h3>There is no sound.</h3>
+<p>Check the audio device in Settings → Playback. If the selected device is not connected, sound plays from the Windows
+default device. <kbd>M</kbd> = mute, <kbd>0</kbd> = all channels.</p>
+<h3>The film does not play: “encrypted”.</h3>
+<p>Encrypted DCPs play only on a cinema server with a KDM. In ReelCheck you can check the hash, the KDM and the
+details, but not see the picture.</p>
+<h3>“Missing files” in a VF.</h3>
+<p>A Version File (e.g. subtitles only) needs its OV. Put the two folders side by side in the same parent folder and
+load again.</p>
+<h3>The distributor's drive does not appear in Windows.</h3>
+<p>It is probably a Linux (ext) drive. Tools → Linux drive (chapter 7). Do not format it.</p>
+<h3>The conversion to DCP does not start.</h3>
+<p>DCP-o-matic is needed; the “Video → DCP” window shows whether it was found and helps with the installation. Also
+check the free space in the output folder.</p>
+<h3>The PDF report is not created.</h3>
+<p>Microsoft Edge or Chrome is needed. Alternatively: HTML report, then Print → Save as PDF in the browser.</p>
+<h3>Something else is wrong.</h3>
+<p>Click <b>Log</b> in the main window: every error is recorded there in detail. Send it with a description to whoever
+supports the program.</p>
+
+</body>
+</html>

@@ -142,8 +142,8 @@ python reelcheck.py
 
 ## Χρήση
 
-**Οδηγίες χρήσης σε PDF** (με εικόνες, για όποιον δουλεύει με το πρόγραμμα): [docs/guide](docs/guide), ή από το
-πρόγραμμα **Βοήθεια → Οδηγίες - Guide** (`F1`).
+**Οδηγίες χρήσης σε PDF** (με εικόνες, για όποιον δουλεύει με το πρόγραμμα), στα ελληνικά και στα αγγλικά:
+[docs/guide](docs/guide), ή από το πρόγραμμα **Βοήθεια → Οδηγίες - Guide** (`F1`).
 
 Άνοιγμα DCP:
 
@@ -382,9 +382,9 @@ app/
     theme.py          φωτεινό / σκούρο θέμα
     winutil.py        θέμα και μπάρα τίτλου των Windows
 assets/               icon.ico, icon.png
-docs/guide/           οδηγίες χρήσης: ReelCheck_Guide.pdf και το κείμενό τους (guide.html)
+docs/guide/           οδηγίες χρήσης: ReelCheck_Guide.pdf / _EN.pdf, κείμενο guide.html / guide_en.html, guide.css
 scripts/make_guide.py οδηγίες → PDF (με τον Edge)
-scripts/guide_shots.py screenshots για τις οδηγίες (docs/screenshots/guide-*.png)
+scripts/guide_shots.py screenshots για τις οδηγίες: el → guide-*.png, en → guide-en-*.png
 scripts/make_icon.py  δημιουργία των εικονιδίων
 ReelCheck.bat         εκκίνηση από τον κώδικα με αυτόματη εγκατάσταση
 build_exe.bat         χτίσιμο του dist\ReelCheck.exe με PyInstaller

@@ -1,6 +1,6 @@
 """
-Screenshots για τις οδηγίες (φωτεινό θέμα): python scripts/guide_shots.py
-Γράφει docs/screenshots/guide-*.png. Δεν αλλάζει ρυθμίσεις ή δεδομένα του χρήστη.
+Screenshots για τις οδηγίες (φωτεινό θέμα): python scripts/guide_shots.py [el|en]
+Γράφει docs/screenshots/guide-*.png (αγγλικά: guide-en-*.png). Δεν αλλάζει ρυθμίσεις ή δεδομένα του χρήστη.
 """
 import os
 import sys
@@ -13,9 +13,13 @@ os.chdir(ROOT)
 from PIL import ImageGrab  # noqa: E402
 
 from app.core import prefs  # noqa: E402
+from app.core.i18n import set_language, tr  # noqa: E402
 from app.tools import returns as rt, schedule as sch  # noqa: E402
 
 OUT = os.path.join(ROOT, "docs", "screenshots")
+LANG = sys.argv[1] if len(sys.argv) > 1 else "el"
+PREFIX = "guide-" if LANG == "el" else f"guide-{LANG}-"
+set_language(LANG)
 TMP = tempfile.mkdtemp(prefix="reelcheck_shots_")
 _orig = prefs.get
 prefs.get = lambda k: {"theme": "light", "watch_enabled": False}.get(k, _orig(k))  # μόνο για αυτή τη διεργασία
@@ -23,6 +27,7 @@ rt.RETURNS_FILE = os.path.join(TMP, "returns.json")
 sch.SCHEDULE_FILE = os.path.join(TMP, "schedule.json")
 
 import app.ui.launcher as L  # noqa: E402
+from app.ui.i18n_tk import install as install_translation  # noqa: E402
 import app.ui.launcher_tools as LT  # noqa: E402
 
 EXAMPLE = r"E:\Festival 2026"
@@ -34,10 +39,11 @@ class _IngestExample(LT.IngestWindow):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.dest.set(EXAMPLE)
-        self.catalog.set(EXAMPLE + r"\κατάλογος.csv")
+        self.catalog.set(EXAMPLE + (r"\κατάλογος.csv" if LANG == "el" else r"\catalogue.csv"))
 
 
 LT.IngestWindow = _IngestExample
+install_translation()  # αγγλικά: όπως στο πρόγραμμα (στα ελληνικά δεν κάνει τίποτα)
 
 lw = L.LauncherWindow(initial=os.path.join(ROOT, "_demo"))
 r = lw.root
@@ -53,13 +59,13 @@ def grab(win, name):
         win.update()
     x, y = win.winfo_rootx(), win.winfo_rooty()
     ImageGrab.grab(bbox=(x, y, x + win.winfo_width(), y + win.winfo_height()), all_screens=True).save(
-        os.path.join(OUT, f"guide-{name}.png"))
+        os.path.join(OUT, f"{PREFIX}{name}.png"))
     win.attributes("-topmost", False)
     print("ok", name)
 
 
 def last_window(title):
-    return [w for w in r.winfo_children() if w.winfo_class() == "Toplevel" and w.title() == title][-1]
+    return [w for w in r.winfo_children() if w.winfo_class() == "Toplevel" and w.title() in (title, tr(title))][-1]
 
 
 def window_shot(open_fn, title, name, delay=900, close=True):
@@ -69,13 +75,18 @@ def window_shot(open_fn, title, name, delay=900, close=True):
     return go
 
 
+DEMO = {"el": ("Αίθουσα 1", "εισαγωγή σκηνοθέτη", "Το Ταξίδι", "Καλοκαίρι", "Διανομή Α", "Σκηνοθέτης"),
+        "en": ("Screen 1", "director's intro", "The Journey", "Summer", "Distributor A", "Director")}
+
+
 def demo_schedule():
     it = lw.items[0]["cpl"]
-    sch.save([sch.new_screening("20/11/2026", "18:00", "Αίθουσα 1", it.title, it.seconds / 60, 10, it.id, "εισαγωγή σκηνοθέτη"),
-              sch.new_screening("20/11/2026", "20:30", "Αίθουσα 1", "Το Ταξίδι", 95, 15, None, "Q&A"),
-              sch.new_screening("20/11/2026", "21:00", "Αίθουσα 1", "Καλοκαίρι", 18, 0)])
-    rt.save([rt.new_return("Το Ταξίδι", "CRU #3", "Διανομή Α", "info@example.com", "25/11/2026"),
-             rt.new_return("Καλοκαίρι", "USB 1TB", "Σκηνοθέτης", "", "16/11/2026")])
+    room, intro, film1, film2, dist, director = DEMO.get(LANG, DEMO["en"])
+    sch.save([sch.new_screening("20/11/2026", "18:00", room, it.title, it.seconds / 60, 10, it.id, intro),
+              sch.new_screening("20/11/2026", "20:30", room, film1, 95, 15, None, "Q&A"),
+              sch.new_screening("20/11/2026", "21:00", room, film2, 18, 0)])
+    rt.save([rt.new_return(film1, "CRU #3", dist, "info@example.com", "25/11/2026"),
+             rt.new_return(film2, "USB 1TB", director, "", "16/11/2026")])
 
 
 STEPS = []

@@ -1,7 +1,8 @@
 """
 Οδηγίες χρήσης σε PDF: python scripts/make_guide.py
-Από το docs/guide/guide.html (με τα screenshots του docs/screenshots) → docs/guide/ReelCheck_Guide.pdf,
-που ανοίγει (στο GitHub) από το μενού Βοήθεια. Νέα screenshots: python scripts/guide_shots.py
+docs/guide/guide.html → ReelCheck_Guide.pdf (ελληνικά), docs/guide/guide_en.html → ReelCheck_Guide_EN.pdf (αγγλικά),
+με κοινό στυλ (guide.css) και τα screenshots του docs/screenshots. Ανοίγουν (στο GitHub) από το μενού Βοήθεια.
+Νέα screenshots: python scripts/guide_shots.py el  και  python scripts/guide_shots.py en
 """
 import datetime
 import os
@@ -13,24 +14,26 @@ sys.path.insert(0, ROOT)
 from app.core.config import APP_VERSION  # noqa: E402
 from app.tools.pdf import html_to_pdf  # noqa: E402
 
-SOURCE = os.path.join(ROOT, "docs", "guide", "guide.html")
-OUTPUT = os.path.join(ROOT, "docs", "guide", "ReelCheck_Guide.pdf")
+GUIDE_DIR = os.path.join(ROOT, "docs", "guide")
+GUIDES = (("guide.html", "ReelCheck_Guide.pdf", "%d/%m/%Y"),
+          ("guide_en.html", "ReelCheck_Guide_EN.pdf", "%d %B %Y"))
 
 
-def build(output=OUTPUT):
-    with open(SOURCE, encoding="utf-8") as f:
+def build(source, output, date_fmt):
+    with open(os.path.join(GUIDE_DIR, source), encoding="utf-8") as f:
         html = f.read().replace("{{VERSION}}", APP_VERSION).replace(
-            "{{DATE}}", datetime.date.today().strftime("%d/%m/%Y"))
-    tmp = os.path.join(os.path.dirname(SOURCE), "_build.html")  # ίδιος φάκελος: οι εικόνες βρίσκονται σχετικά
+            "{{DATE}}", datetime.date.today().strftime(date_fmt))
+    tmp = os.path.join(GUIDE_DIR, "_build.html")  # ίδιος φάκελος: εικόνες και guide.css βρίσκονται σχετικά
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(html)
     try:
-        html_to_pdf(tmp, output)
+        html_to_pdf(tmp, os.path.join(GUIDE_DIR, output))
     finally:
         os.remove(tmp)
-    return output
+    return os.path.join(GUIDE_DIR, output)
 
 
 if __name__ == "__main__":
-    out = build(sys.argv[1] if len(sys.argv) > 1 else OUTPUT)
-    print(f"{out} ({os.path.getsize(out) // 1024} KB)")
+    for src, out, fmt in GUIDES:
+        path = build(src, out, fmt)
+        print(f"{path} ({os.path.getsize(path) // 1024} KB)")
